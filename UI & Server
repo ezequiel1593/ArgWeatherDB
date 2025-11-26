@@ -1,0 +1,845 @@
+library(shiny)
+library(rsconnect)
+source("funciones_app.R")
+
+# UI
+ui <- 
+  titlePanel("T.") |> 
+  fluidPage(
+    tags$head(
+      tags$style(HTML("@import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');
+                      body { font-family: open sans; font-size: 16px; color: #1208cc; background-color: #dec11d; } "))
+    ),
+    tabsetPanel(
+      
+      tabPanel(title = "Tablas",
+               tabsetPanel(
+                 tabPanel(title = "Récords",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId =  "EstacionRecords",label =  "Estación",choices = nombres_estaciones, width = '270px'),
+                              tags$hr(),
+                              sliderInput(inputId = "RestringirRecords", label = "Mostrar récords a partir del año:", min = 1873, value = 1906, max = 2001, sep = ''),
+                              tags$hr(),
+                              actionButton(inputId = "EnterRecords",label ="Iniciar",class = "btn-lg btn-success")),
+                            mainPanel( gt_output(outputId = "tablaRecords") )) ),
+                 
+                 tabPanel(title = "Umbrales",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionUmbrales",label = "Estación",choices = nombres_estaciones, width = '300px'),
+                              selectInput(inputId = "MesesUmbrales",label = "Mes",choices = 1:12, width = '70px'),
+                              selectInput(inputId = "ComparacionUmbral",label = "Comparación", width = '280px',
+                                          choices = list("Temp. mínima menor o igual a" = "Tmin <=",
+                                                         "Temp. mínima mayor o igual a" = "Tmin >=",
+                                                         "Temp. máxima menor o igual a" = "Tmax <=",
+                                                         "Temp. máxima mayor o igual a" = "Tmax >=")),
+                              numericInput(inputId = "ValorUmbral",label = "Umbral",value = 10.0,min = -40.0,max = 48.0,step = 0.1, width = '80px'),
+                              actionButton(inputId = "EnterUmbrales",label = "Mostrar",class = "btn-lg btn-success")),
+                            mainPanel( gt_output(outputId = "tablaUmbrales") )) ),
+                 
+                 tabPanel(title = "Frecuencias",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionFrecuencias",label = "Estación",choices = nombres_estaciones, width = '300px'),
+                              radioButtons(inputId = "ParametroFrecuencias", label = "Variable",
+                                           choices = list("Temperatura mínima" = "Tmin","Temperatura máxima" = "Tmax"), selected= "Tmin" ),
+                              radioButtons(inputId = "ComparacionFrecuencias", label = "Comparación",
+                                           choices = list("Menor o igual a" = '<=',"Mayor o igual a" = '>='), selected= '<=' ),
+                              numericInput(inputId = "ValorFrecuencias",label = "Umbral",value = 10.0,min = -40.0,max = 48.0,step = 0.1, width = '80px'),
+                              checkboxInput(inputId = 'CheckFrecuencias', label = 'Añadir frecuencias estacionales y anuales', value = FALSE),
+                              actionButton(inputId = "EnterFrecuencias",label = "Mostrar",class = "btn-lg btn-success")),
+                            mainPanel( gt_output(outputId = "tablaFrecuencias") )) ),
+                 
+                 tabPanel(title= "Valores medios",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionValoresMedios", label = "Estación", choices = nombres_estaciones, selected= nombres_estaciones[1], width = '270px' ),
+                              radioButtons(inputId = "OpcionesValoresMedios", label = "Variable y/o período", choices = list("Mínimas 1ra quincena"="tn1q",
+                                                                                                                             "Mínimas 2da quincena"="tn2q",
+                                                                                                                             "Máximas 1ra quincena"="tx1q",
+                                                                                                                             "Máximas 2da quincena"="tx2q",
+                                                                                                                             "Mínimas mensuales"="tnm",
+                                                                                                                             "Máximas mensuales"="txm",
+                                                                                                                             "Mínimas estacionales"="tnest",
+                                                                                                                             "Máximas estacionales"="txest",
+                                                                                                                             "Anual"="anual"),selected= "tnm" ),
+                              actionButton(inputId = "EnterValoresMedios", label = "Iniciar", class = "btn-lg btn-success")),
+                            mainPanel( gt_output(outputId = "tablaValoresMedios"), downloadButton('down','Descargar') ), ) ),
+                 
+                 tabPanel(title= "Valores extremos",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionExtremos", label = "Estación", choices = nombres_estaciones, width = '270px'),
+                              radioButtons(inputId = "ParamExtremos", label = "Variable",
+                                          choices = list("Mínimas más bajas"="tnn", "Mínimas más altas"="tnx",
+                                                         "Máximas más bajas"="txn", "Máximas más altas"="txx"),
+                                          selected= "tnn"),
+                              checkboxInput(inputId = 'CheckExtremos', label = 'Añadir extremos estacionales y anuales', value = FALSE),
+                              actionButton(inputId = "EnterExtremos", label = "Iniciar", class = "btn-lg btn-success")),
+                            mainPanel(gt_output(outputId = "tablaExtremos") ))),
+                 
+                 tabPanel(title= "Desvío estándar",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionDesvioEstandar", label = "Estación", choices = nombres_estaciones, width = '270px'),
+                              radioButtons(inputId = "ParametroDesvioEstandar", label = "Variable", choices = list("Mínimas"="Tmin", "Máximas"="Tmax"), selected= "Tmin"),
+                              actionButton(inputId = "EnterDesvioEstandar", label = "Iniciar", class = "btn-lg btn-success")),
+                            mainPanel(gt_output(outputId = "tablaDesvioEstandar") ))),
+                 
+                 tabPanel(title= "Mediana",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionMediana", label = "Estación", choices = nombres_estaciones, width = '270px'),
+                              radioButtons(inputId = "ParametroMediana", label = "Variable", choices = list("Mínimas"="Tmin", "Máximas"="Tmax"), selected= "Tmin"),
+                              actionButton(inputId = "EnterMediana", label = "Iniciar", class = "btn-lg btn-success")),
+                            mainPanel(gt_output(outputId = "tablaMediana") ))),
+                 
+                 tabPanel(title= "Amplitud térmica",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionAmplitudTermica", label = "Estación", choices = nombres_estaciones, width = '270px'),
+                              radioButtons(inputId = "TipoAmplitud", label = "Tipo de amplitud", choices = list("Valor medio"="media", "Valor absoluto"="absoluta"), selected= "media"),
+                              actionButton(inputId = "EnterAmplitudTermica", label = "Iniciar", class = "btn-lg btn-success")),
+                            mainPanel(gt_output(outputId = "tablaAmplitudTermica") ))),
+                 
+                 tabPanel(title= "Anomalías",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionAnomaliasMensuales", label = "Estación", choices = nombres_estaciones, selected= nombres_estaciones[1], width = '270px'),
+                              radioButtons(inputId = "ParametroAnomaliasMensuales", label = "Variable", choices = list("Mínimas"="Tmin", "Máximas"="Tmax"), selected= "Tmin" ),
+                              selectInput(inputId = "PeriodoAnomaliasMensuales", label = "Respecto al periodo:",
+                                          choices = list("1911-1940" = 1, "1921-1950" = 2, "1931-1960" = 3, "1941-1970" = 4,
+                                                         "1951-1980" = 5, "1961-1990" = 6, "1971-2000" = 7, "1981-2010" = 8,
+                                                         "1991-2020" = 9), selected= 9, width = '130px' ),
+                              checkboxInput(inputId = 'CheckAnomaliasEstandarizadas', label = 'Anomalías estandarizadas', value = FALSE),
+                              actionButton(inputId = "EnterAnomaliasMensuales", label = "Iniciar", class = "btn-lg btn-success")),
+                            mainPanel( gt_output(outputId = "tablaAnomaliasMensuales") ) ) ),
+                 
+                 tabPanel(title= "Percentiles",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId =  "EstacionPercentiles",label =  "Estación",choices = nombres_estaciones, width = '270px'),
+                              selectInput(inputId = "PeriodoPercentiles",label = "Periodo",
+                                          choices = list("1911-1940" = 1, "1921-1950" = 2, "1931-1960" = 3, "1941-1970" = 4,
+                                                         "1951-1980" = 5, "1961-1990" = 6, "1971-2000" = 7, "1981-2010" = 8,
+                                                         "1991-2020" = 9), selected= 9, width = '130px'),
+                              radioButtons(inputId = "ParametroPercentiles", label = "Variable",
+                                           choices = list("Temp. mínima" = "Tmin", "Temp. máxima" = "Tmax")),
+                              actionButton(inputId = "EnterPercentiles", label ="Iniciar",class = "btn-lg btn-success")),
+                            mainPanel( gt_output(outputId = "tablaPercentiles") ))),
+                 
+                 tabPanel(title= "Diferencias percentiles",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId =  "EstacionPercentilesDif",label = "Estación",choices = nombres_estaciones, width = '270px'),
+                              selectInput(inputId = "Periodo1DifPercentiles",label = "Periodo...",
+                                          choices = list("1911-1940" = 1, "1921-1950" = 2, "1931-1960" = 3, "1941-1970" = 4,
+                                                         "1951-1980" = 5, "1961-1990" = 6, "1971-2000" = 7, "1981-2010" = 8,
+                                                         "1991-2020" = 9), selected= 9, width = '130px'),
+                              selectInput(inputId = "Periodo2DifPercentiles",label = "...respecto al periodo",
+                                          choices = list("1911-1940" = 1, "1921-1950" = 2, "1931-1960" = 3, "1941-1970" = 4,
+                                                         "1951-1980" = 5, "1961-1990" = 6, "1971-2000" = 7, "1981-2010" = 8,
+                                                         "1991-2020" = 9), selected= 8, width = '130px'),
+                              radioButtons(inputId = "ParametroDifPercentiles", label = "Variable",
+                                           choices = list("Temp. mínima" = "Tmin", "Temp. máxima" = "Tmax")),
+                              actionButton(inputId = "EnterDifPercentiles", label ="Iniciar",class = "btn-lg btn-success")),
+                            mainPanel( gt_output(outputId = "tablaDifPercentiles"))) ),
+                 
+                 tabPanel(title= "Valores normales",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId =  "EstacionValNorm", label =  "Estación", choices = nombres_estaciones, width = '270px'),
+                              selectInput(inputId = "PeriodoNormal", label = "Periodo",
+                                          choices = list("1911-1940" = 1, "1921-1950" = 2, "1931-1960" = 3, "1941-1970" = 4,
+                                                         "1951-1980" = 5, "1961-1990" = 6, "1971-2000" = 7, "1981-2010" = 8,
+                                                         "1991-2020" = 9), selected= 9, width = '130px' ),
+                              actionButton(inputId = "EnterValNorm",label ="Iniciar",class = "btn-lg btn-success")),
+                            mainPanel( gt_output(outputId = "tablaValNorm") ))),
+                 
+                 tabPanel(title="Umbrales - Serie completa",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionUmbralRegistroTotal", label = "Estación", choices = nombres_estaciones, width = '270px'),
+                              radioButtons(inputId = "ParamUmbralRegistroTotal", label = "Variable",
+                                           choices = list("Temp. mínima menor o igual a" = "Tmin <=",
+                                                          "Temp. mínima mayor o igual a" = "Tmin >=",
+                                                          "Temp. máxima menor o igual a" = "Tmax <=",
+                                                          "Temp. máxima mayor o igual a" = "Tmax >="), selected= "Tmin <=" ),
+                              numericInput(inputId = "ValorUmbralRegistroTotal",label = "Umbral",value = 10.0,min = -40.0,max = 48.0,step = 0.1, width = '80px'),
+                              actionButton(inputId = "EnterUmbralRegistroTotal", label = "Mostrar", class = "btn-lg btn-success") ),
+                            mainPanel( gt_output(outputId = "tablaUmbralRegistroTotal") )) ),
+                 
+                 tabPanel(title="Rachas",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionRachas", label = "Estación", choices = nombres_estaciones, width = '270px'),
+                              radioButtons(inputId = "VariableRachas", label = "Variable",
+                                           choices = list("Temp. mínima" = "Tmin",
+                                                          "Temp. máxima" = "Tmax"), selected= "Tmin" ),
+                              radioButtons(inputId = "ComparacionRachas", label = "Comparacion",
+                                           choices = list("Mayor o igual a" = ">=",
+                                                          "Menor o igual a" = "<="), selected= ">=" ),
+                              numericInput(inputId = "UmbralRachas",label = "Umbral",value = 10.0,min = -40.0,max = 48.0,step = 0.1, width= '80px'),
+                              numericInput(inputId = "DuracionRachas",label = "Duración mínima",value = 10,min = 3,max = 60,step = 1, width= '80px'),
+                              actionButton(inputId = "EnterRachas", label = "Mostrar", class = "btn-lg btn-success") ),
+                            mainPanel( verbatimTextOutput(outputId = "OutputRachas") )) ),
+                 
+                 tabPanel(title="Top Five",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionTopFive", label = "Estación", choices = nombres_estaciones, width = '270px'),
+                              radioButtons(inputId = "VariableTopFive", label = "Variable",
+                                           choices = list("Temp. mínima media" = "tnm",
+                                                          "Temp. máxima media" = "txm"), selected= "tnm" ),
+                              radioButtons(inputId = "OrdenTopFive", label = "Orden",
+                                           choices = list("Descendente" = "descendente",
+                                                          "Ascendente" = "ascendente"), selected= "descendente" ),
+                              actionButton(inputId = "EnterTopFive", label = "Mostrar", class = "btn-lg btn-success") ),
+                            mainPanel( verbatimTextOutput(outputId = "OutputTopFive") )) ),
+                 
+                 tabPanel(title = "Tablas anuales",
+                          fluidPage(
+                            fluidRow(
+                              column(5,
+                                     selectInput(inputId = "EstacionDatos", label = "Estación", choices = nombres_estaciones, width = '400px')
+                                     ),
+                              column(3,
+                                     numericInput(inputId = "AnioDatos", label = "Año", value = 2025, min = 1906, max = 2025, step = 1, width= '100px')
+                                     ),
+                              column(2,
+                                     actionButton(inputId = "EnterDatos", label ="Iniciar", class = "btn-lg btn-success")
+                                     ) ),
+                            fluidRow(
+                              column(12,
+                                     gt_output(outputId = "tablaDatos") ) )
+                            ) ) 
+                 ) ),
+      
+      tabPanel(title="Gráficos",
+               tabsetPanel(
+                 
+                 tabPanel(title= "Series temporales",
+                          fluidRow(
+                            column(width = 4,
+                                   selectInput(inputId = "EstacionSerieTemp", label = "Estación", choices = nombres_estaciones, selected= nombres_estaciones[1], width = '400px'),
+                                   numericInput(inputId = "MesSerieTemp",label = "Mes",value = 1,min = 1,max = 12,step = 1, width = '80px'),
+                                   radioButtons(inputId = "VariableSerieTemp", label = "Variable", choices = list("Mínimas"="Tmin", "Máximas"="Tmax"), selected= "Tmin"),
+                                   radioButtons(inputId = "EstadisticaSerieTemp", label = "Estadística", choices = list("Valor medio"="media", "Valor más bajo"="baja",
+                                                                                                                        "Valor más alto"="alta","Desvío estándar"="desvioest",
+                                                                                                                        "Mediana"="mediana"), selected= "media"),
+                                   actionButton(inputId = "EnterSerieTemp", label = "Graficar", class = "btn-lg btn-success")
+                                   ),
+                            column(width = 6,
+                                   plotOutput(outputId = "graficoSerieTemp")
+                                   ) ) ),
+                 
+                 tabPanel(title="Media Móvil",
+                          fluidRow(
+                            column(width = 4,
+                                   selectInput(inputId = "EstacionMediaMovil", label = "Estación", choices = nombres_estaciones, width = '400px'),
+                                   radioButtons(inputId = "VariableMediaMovil", label = "Variable", choices = list("Mínimas"="Tmin", "Máximas"="Tmax"), selected= "Tmin"),
+                                   selectInput(inputId =  "AnioMediaMovil", label = "Año", choices = 1961:2025, selected = 2025, width = '100px'),
+                                   actionButton(inputId = "EnterMediaMovil", label = "Graficar", class = "btn-lg btn-success")
+                                   ),
+                            column(width = 6,
+                                   plotOutput(outputId = "graficoMediaMovil")
+                                   ) ) ),
+                 
+                 tabPanel(title= "Heatmap",
+                          sidebarLayout(
+                            sidebarPanel(width = 3,
+                                         selectInput(inputId = "EstacionHeatmap", label = "Estación", choices = nombres_estaciones, selected= nombres_estaciones[1], width = '270px'),
+                                         selectInput(inputId = "MesHeatmap", label = "Mes", choices = 1:12, width = '70px'),
+                                         radioButtons(inputId = "ParametroHeatmap", label = "Variable",
+                                                      choices = list("Temperatura mínima"="Tmin", "Temperatura máxima"="Tmax"), selected= "Tmin" ),
+                                         actionButton(inputId = "GrafHeatmap", label = "Graficar", class = "btn-lg btn-success"),
+                                         HTML("<p></p><p><b>La escala de colores se ajusta a los valores extremos de la estación elegida.</b></p>")),
+                            mainPanel(plotOutput(outputId = "graphHeatmap") ) ) ),
+                 
+                 tabPanel(title="Boxplots",
+                          fluidRow(
+                            column(width = 4,
+                                   selectInput(inputId = "EstacionBoxplots", label = "Estación", choices = nombres_estaciones, width = '400px'),
+                                   radioButtons(inputId = "ParametroBoxplots", label = "Variable", choices = list("Mínimas"="Tmin", "Máximas"="Tmax"), selected= "Tmin"),
+                                   selectInput(inputId =  "AnioBoxplot", label = "Año", choices = 1961:2025, selected = 2025, width = '100px'),
+                                   actionButton(inputId = "EnterBoxplots", label = "Iniciar boxplots", class = "btn-lg btn-success"),
+                                   HTML("<p></p><p><b>Se usaron datos 1981-2020 para los boxplots.</b></p>")
+                                   ),
+                            column(width = 6,
+                                   plotOutput(outputId = "Boxplots")
+                                   ) ) ),
+                 
+                 tabPanel(title="Boxmóvil",
+                          fluidRow(
+                            column(width = 4,
+                                   selectInput(inputId = "EstacionBoxmovil", label = "Estación", choices = nombres_estaciones, width = '400px'),
+                                   radioButtons(inputId = "ParametroBoxmovil", label = "Variable", choices = list("Mínimas"="Tmin", "Máximas"="Tmax"), selected= "Tmin"),
+                                   selectInput(inputId =  "ExtensionBoxmovil", label = "Extensión", choices = seq(20,40,5), selected = 20, width = '80px'),
+                                   actionButton(inputId = "EnterBoxmovil", label = "Iniciar boxplots", class = "btn-lg btn-success")
+                            ),
+                            column(width = 6,
+                                   plotOutput(outputId = "Boxplotmovil")
+                            ) ) ),
+                 
+                 tabPanel(title = "Densidad",
+                          div(id = "densidad-tab",
+                          tags$style(HTML(" #densidad-tab .shiny-split-layout {overflow: visible !important;}
+                                #densidad-tab .shiny-split-layout > div {overflow: visible !important;}
+                                #densidad-tab .selectize-dropdown {
+                                  z-index: 10000 !important;position: absolute !important;
+                                  top: 100% !important;width: auto !important;}
+                                #densidad-tab .selectize-control {position: relative !important;}") ),
+                          fluidRow(
+                            column(width = 4,
+                                   selectInput(inputId = "EstacionDensidad", label = "Estación", choices = nombres_estaciones, width = '400px'),
+                                   radioButtons(inputId = "VariableDensidad", label = "Variable", choices = list("Mínimas" = "Tmin", "Máximas" = "Tmax"), selected = "Tmin"),
+                                   splitLayout(
+                                     cellWidths = c('33%', '33%', '33%'),
+                                     cellArgs = list(style = "margin-bottom: 20px;"),
+                                     selectInput(inputId = "AnioDensidad1", label = "Inicio período 1", choices = 1911:2025, selected = 1961, width = '100px'),
+                                     selectInput(inputId = "AnioDensidad2", label = "Inicio período 2", choices = 1911:2025, selected = 2001, width = '100px'),
+                                     selectInput(inputId = "ExtensionDensidad", label = "Extensión (años)", choices = seq(5, 30, 5), selected = 30, width = '100px') ),
+                                   actionButton(inputId = "EnterDensidad", label = "Graficar", class = "btn-lg btn-success") ),
+                            column(width = 6,
+                                   plotOutput(outputId = "graficoDensidad") ) ) ) ),
+                 
+                 tabPanel(title="FDP",
+                          fluidRow(
+                            column(width = 4,
+                                   selectInput(inputId = "EstacionFDP", label = "Estación", choices = nombres_estaciones, width = '400px'),
+                                   radioButtons(inputId = "ParametroFDP", label = "Variable", choices = list("Mínimas"="Tmin", "Máximas"="Tmax"), selected= "Tmin"),
+                                   #selectInput(inputId =  "AnioBoxplot", label = "Año", choices = 1961:2025, selected = 2025, width = '100px'),
+                                   actionButton(inputId = "EnterFDP", label = "Iniciar FDP", class = "btn-lg btn-success"),
+                                   HTML("<p></p><p><b>Se usaron datos 1991-2020.</b></p>")
+                            ),
+                            column(width = 6,
+                                   plotOutput(outputId = "graficoFDP")
+                            ) ) ),
+                 
+                 tabPanel(title="Serie completa",
+                          sidebarLayout(sidebarPanel(
+                            selectInput(inputId = "EstacionGrafCompleto", label = "Estación", choices = nombres_estaciones, width = '270px'),
+                            actionButton(inputId = "GrafSerieCompleta", label = "Iniciar gráfico", class = "btn-lg btn-success") ),
+                            mainPanel( plotOutput(outputId = "graphSerieCompleta") )) )
+                 ) ),
+      
+      tabPanel(title="Análisis",
+               tabsetPanel(
+                 tabPanel(title="Correlaciones",
+                          sidebarLayout(
+                            sidebarPanel(HTML("<p><b>Correlación de las temperaturas mínimas y máximas diarias.</b></p>"),
+                              selectInput(inputId = "EstacionCorr1", label = "Estación 1", choices = nombres_estaciones, width = '270px'),
+                              selectInput(inputId = "EstacionCorr2", label = "Estación 2", choices = nombres_estaciones, width = '270px'),
+                              tags$hr(),
+                              sliderInput(inputId = "RestringirCorrelaciones", label = "Utilizar el rango de años:", min = 1961, value = c(1991,2020), max = 2024, sep = ''),
+                              actionButton(inputId = "EnterCorr", label = "Calcular", class = "btn-lg btn-success") ),
+                            mainPanel( gt_output(outputId = "tablaCorr") )) ),
+                 
+                 tabPanel(title="Datos faltantes",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionFaltantes", label = "Estación", choices = nombres_estaciones, width = '270px'),
+                              radioButtons(inputId = "VariableFaltantes", label = "Variable", choices = list("Mínimas"="Tmin", "Máximas"="Tmax"), selected= "Tmin"),
+                              tags$hr(),
+                              actionButton(inputId = "EnterFaltantes", label = "Iniciar", class = "btn-lg btn-success") ),
+                            mainPanel( gt_output(outputId = "tablaFaltantes") )), ),
+                 
+                 tabPanel(title="Más récords",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionMasRecords", label = "Estación", choices = nombres_estaciones, width = '300px'),
+                              tags$hr(),
+                              actionButton(inputId = "EnterRecordsAmplitudDiaria", label = "Récords amplitud térmica diaria", class = "btn-lg btn-success"),
+                              actionButton(inputId = "EnterRecordsPrimQuincena", label = "Récords Primera Quincena", class = "btn-lg btn-success"),
+                              actionButton(inputId = "EnterRecordsSegunQuincena", label = "Récords Segunda Quincena", class = "btn-lg btn-success")),
+                            mainPanel( gt_output(outputId = "tablaMasRecords") )), ),
+                 
+                 tabPanel(title="Ránking",
+                          sidebarLayout(sidebarPanel(
+                            selectInput(inputId = "AnioRanking", label = "Año", choices = 1906:2024, width = '80px',selected=2001),
+                            selectInput(inputId = "MesRanking", label = "Mes", choices = 1:12, width = '70px'),
+                            selectInput(inputId = "DiaRanking", label = "Dia", choices = 1:31, width = '70px'),
+                            radioButtons(inputId = "VariableRanking", label = "Variable", choices = list("Mínimas"="Tmin", "Máximas"="Tmax")),
+                            actionButton(inputId = "EnterRanking", label = "Mostrar", class = "btn-lg btn-success") ),
+                            mainPanel( gt_output(outputId = "tablaRanking") )), ),
+                 
+                 tabPanel(title= "Evolución correlación",
+                          fluidRow(
+                            column(width = 4,
+                                   selectInput(inputId = "EstacionEvolCorrel1", label = "Estación 1", choices = nombres_estaciones, width = '300px'),
+                                   selectInput(inputId = "EstacionEvolCorrel2", label = "Estación 2", choices = nombres_estaciones, width = '300px'),
+                                   radioButtons(inputId = "VariableEvolCorrel", label = "Variable", choices = list("Mínimas"="Tmin", "Máximas"="Tmax")),
+                                   radioButtons(inputId = "TipoEvolCorrel", label = "Tipo de correlación", choices = list("Pearson"="pearson", "Kendall"="kendall")),
+                                   selectInput(inputId = "NAniosEvolCorrel", label = "n (años)", choices = seq(5,30,5), width = '80px',selected=25),
+                                   actionButton(inputId = "EnterEvolCorrel", label = "Mostrar", class = "btn-lg btn-success")
+                            ),
+                            column(width = 6,
+                                   plotOutput(outputId = "graficoEvolCorrel")
+                            ) ) ),
+                 
+                 tabPanel(title="Inconsistencias",
+                          sidebarLayout(
+                            sidebarPanel(
+                              selectInput(inputId = "EstacionInconsistencias", label = "Estación", choices = nombres_estaciones, width = '270px'),
+                              radioButtons(inputId = "VariableInconsistencias", label = "Variable", choices = list("Mínima superior a la máxima del día precedente"="minima",
+                                                                                                                   "Máxima inferior a la mínima del día precedente"="maxima"), selected= "minima"),
+                              tags$hr(),
+                              actionButton(inputId = "EnterInconsistencias", label = "Iniciar", class = "btn-lg btn-success") ),
+                            mainPanel( verbatimTextOutput(outputId = "OutputInconsistencias") )), ),
+                 
+                 tabPanel(title="Mapas Anomalías",
+                          sidebarLayout(sidebarPanel(
+                            selectInput(inputId = "AnioReanalisis", label = "Año", choices = 1971:2025, width = '80px'),
+                            selectInput(inputId = "MesReanalisis", label = "Mes", choices = 1:12, width = '70px'),
+                            radioButtons(inputId = "VariableReanalisis", label = "Variable", choices = list("Mínimas"="Tmin", "Máximas"="Tmax"), selected= "Tmin"),
+                            actionButton(inputId = "EnterReanalisis", label = "Iniciar mapas", class = "btn-lg btn-success"),
+                            actionButton(inputId = "SigEnterReanalisis", label = "Siguiente mes", class = "btn-lg btn-success"),
+                            tags$hr() ),
+                            mainPanel( imageOutput(outputId = "ReanalisisMapa") )) ),
+                 
+                 tabPanel(title="Tablas Anomalías",
+                          sidebarLayout(sidebarPanel(
+                            actionButton(inputId = "MinimasReanalisis", label = "Tabla mínimas", class = "btn-lg btn-primary"),
+                            actionButton(inputId = "MaximasReanalisis", label = "Tabla máximas", class = "btn-lg btn-danger")),
+                            mainPanel( gt_output(outputId = "tablaReanalisis") )) )
+                 )),
+      
+      tabPanel(title = "Información",
+               HTML("
+               <p>SOBRE LA APLICACIÓN:</p>
+               <p>La aplicación se divide en 3 grandes secciones (excluyendo la actual): 'Tablas', 'Gráficos y mapas'
+               y 'Análisis'. A su vez, cada una de estas secciones se dividen en paneles. En los paneles reactivos, 
+               luego de apretar el botón 'Iniciar', los resultados van cambiando de acuerdo cambien los inputs del
+               usuario, mientras que en los paneles no reactivos, es necesario apretar el botón 'Mostrar' para que 
+               los resultados puedan ser visualizados.</p>
+               <p>SOBRE LOS DATOS:</p>
+               <p>Los datos se encuentran actualizados al 31-7-2025. Cualquier valor mensual es calculado si la
+               cantidad de datos faltantes no es superior al 15%. Cualquier valor estacional o anual no es calculado
+               si falta el valor de algún mes. Para el cálculo de los valores quincenales no se tolera ningún dato
+               faltante. Para el mes de febrero, se consideran catorcenas en lugar de quincenas. El mismo criterio de
+               no más de 15% de datos faltantes rige para el cálculo de percentiles y de valores normales.</p>
+               <p>Iniciado por Ezequiel Elias (en Twitter/X: @Argen_weather), en julio del 2023.</p>
+               <p>ÚLTIMAS NOVEDADES:</p>
+               <p>09.04.2025 <- Se agregaron datos de reanálisis de temperatura mínima y máxima [Gráficos].</p>
+               <p>17.04.2025 <- Nuevo: Ránking [Análisis] y modificación de Valores Normales [Tablas].</p>
+               <p>01.05.2025 <- Nuevo: modificación de Gráfico Media Móvil [Análisis].</p>
+               <p>08.07.2025 <- Nuevo: comparación de funciones de densidad de diferentes períodos [Gráficos].</p>
+               <p>17.08.2025 <- Nuevo: evolución temporal de correlaciones [Análisis].</p>
+               <p>17.08.2025 <- Nuevo: Top Five [Tablas].</p>
+               <p>18.08.2025 <- Nuevo: inconsistencias entre datos contiguos [Análisis].</p>
+                    
+                    "
+                    )),
+      type="tabs")
+  )
+
+# SERVER
+server <- function(input, output, session) {
+  
+  #------------------TABLAS-----------------------------------------------------
+  
+  #PANEL RECORDS
+  observeEvent(input$EnterRecords, {
+    output$tablaRecords <- render_gt({
+      records(listado_archivos[[match(input$EstacionRecords,nombres_estaciones)]], input$RestringirRecords)
+    })
+  })
+  
+  #PANEL UMBRALES (MENSUALES)
+  valorReactivo_UmbralesMensuales <- reactiveValues(value_store = character() )
+  accionarUmbralesMensuales <- reactiveVal()
+  observeEvent(eventExpr = input$EnterUmbrales,
+               {valorReactivo_UmbralesMensuales$value_store <- input$ComparacionUmbral
+               accionarUmbralesMensuales(
+                 umbrales(listado_archivos[[match(input$EstacionUmbrales,nombres_estaciones)]],
+                          valorReactivo_UmbralesMensuales$value_store,
+                          as.numeric(input$ValorUmbral),
+                          as.numeric(input$MesesUmbrales)) )
+               })
+  output$tablaUmbrales <- render_gt({accionarUmbralesMensuales()})
+  
+  #PANEL FRECUENCIAS
+  valorReactivo_Frecuencias1 <- reactiveValues(value_store = character() )
+  valorReactivo_Frecuencias2 <- reactiveValues(value_store = character() )
+  accionarFrecuencias <- reactiveVal()
+  observeEvent(eventExpr = input$EnterFrecuencias,
+               {valorReactivo_Frecuencias1$value_store <- input$ParametroFrecuencias
+               valorReactivo_Frecuencias2$value_store <- input$ComparacionFrecuencias
+               accionarFrecuencias(
+                 frecuencias(listado_archivos[[match(input$EstacionFrecuencias,nombres_estaciones)]],
+                             valorReactivo_Frecuencias1$value_store,
+                             valorReactivo_Frecuencias2$value_store,
+                             as.numeric(input$ValorFrecuencias),
+                             extra = input$CheckFrecuencias ) )
+               })
+  output$tablaFrecuencias <- render_gt({accionarFrecuencias()})
+  
+  #PANEL VALORES MEDIOS
+  observeEvent(input$EnterValoresMedios, {
+    output$tablaValoresMedios <- render_gt({
+      
+      funcion_a_ejecutar <- switch(input$OpcionesValoresMedios,
+                                   "tn1q" =  medias_quincenales(listado_archivos[[match(input$EstacionValoresMedios,nombres_estaciones)]],
+                                                                "Tmin","primera"),
+                                   "tn2q" = medias_quincenales(listado_archivos[[match(input$EstacionValoresMedios,nombres_estaciones)]],
+                                                               "Tmin","segunda"),
+                                   "tx1q" = medias_quincenales(listado_archivos[[match(input$EstacionValoresMedios,nombres_estaciones)]],
+                                                               "Tmax","primera"),
+                                   "tx2q" = medias_quincenales(listado_archivos[[match(input$EstacionValoresMedios,nombres_estaciones)]],
+                                                               "Tmax","segunda"),
+                                   "tnm" = tabla_mensual(listado_archivos[[match(input$EstacionValoresMedios,nombres_estaciones)]],
+                                                         'tnm'),
+                                   "txm" = tabla_mensual(listado_archivos[[match(input$EstacionValoresMedios,nombres_estaciones)]],
+                                                           'txm'),
+                                   "tnest" = medias_estacionales(listado_archivos[[match(input$EstacionValoresMedios,nombres_estaciones)]],
+                                                                 "Tmin"),
+                                   "txest" = medias_estacionales(listado_archivos[[match(input$EstacionValoresMedios,nombres_estaciones)]],
+                                                                 "Tmax"),
+                                   "anual" = valoresMediosAnuales(listado_archivos[[match(input$EstacionValoresMedios,nombres_estaciones)]] )
+                                     )
+      funcion_a_ejecutar$mytabl
+    })
+  })
+  
+  #PANEL VALORES EXTREMOS
+  observeEvent(input$EnterExtremos, {
+    output$tablaExtremos <- render_gt({
+      tabla_mensual(listado_archivos[[match(input$EstacionExtremos,nombres_estaciones)]],
+                    input$ParamExtremos,
+                    extra = input$CheckExtremos)$mytabl
+    })
+  })
+  
+  #PANEL DESVÍO ESTÁNDAR
+  observeEvent(input$EnterDesvioEstandar, {
+    output$tablaDesvioEstandar <- render_gt({
+      desvioEstandarMensual(listado_archivos[[match(input$EstacionDesvioEstandar,nombres_estaciones)]],
+                            input$ParametroDesvioEstandar)$mytabl
+    })
+  })
+  
+  #PANEL MEDIANA
+  observeEvent(input$EnterMediana, {
+    output$tablaMediana <- render_gt({
+      medianaMensualTabla(listado_archivos[[match(input$EstacionMediana,nombres_estaciones)]],
+                          input$ParametroMediana)$mytabl
+    })
+  })
+  
+  #PANEL AMPLITUD TÉRMICA
+  observeEvent(input$EnterAmplitudTermica, {
+    output$tablaAmplitudTermica <- render_gt({
+      amplitudTermicaMensual(listado_archivos[[match(input$EstacionAmplitudTermica,nombres_estaciones)]],
+                             input$TipoAmplitud)$mytabl
+    })
+  })
+  
+  #PANEL ANOMALIAS MENSUALES
+  observeEvent(input$EnterAnomaliasMensuales, {
+    output$tablaAnomaliasMensuales <- render_gt({
+      if (input$CheckAnomaliasEstandarizadas) {
+        anomalia_estandarizada(listado_archivos[[match(input$EstacionAnomaliasMensuales,nombres_estaciones)]],
+                               input$ParametroAnomaliasMensuales,
+                               as.numeric(input$PeriodoAnomaliasMensuales))$mytabl
+      } else {
+        anomalias(listado_archivos[[match(input$EstacionAnomaliasMensuales,nombres_estaciones)]],
+                  input$ParametroAnomaliasMensuales,
+                  as.numeric(input$PeriodoAnomaliasMensuales))$mytabl
+      }
+      
+    })
+  })
+  
+  #PANEL PERCENTILES
+  observeEvent(input$EnterPercentiles, {
+    output$tablaPercentiles <- render_gt({
+      percentiles(listado_archivos[[match(input$EstacionPercentiles,nombres_estaciones)]],
+                  as.numeric(input$PeriodoPercentiles), input$ParametroPercentiles)$mytabl
+    })
+  })
+  
+  #PANEL DIFERENCIA PERCENTILES
+  observeEvent(input$EnterDifPercentiles, {
+    output$tablaDifPercentiles <- render_gt({
+      diferencias_percentiles(listado_archivos[[match(input$EstacionPercentilesDif,nombres_estaciones)]],
+                              as.numeric(input$Periodo2DifPercentiles),
+                              as.numeric(input$Periodo1DifPercentiles),
+                              input$ParametroDifPercentiles)
+    })
+  })
+  
+  #PANEL VALORES NORMALES
+  observeEvent(input$EnterValNorm, {
+    output$tablaValNorm <- render_gt({
+      valores_normales(listado_archivos[[match(input$EstacionValNorm,nombres_estaciones)]],
+                       as.numeric(input$PeriodoNormal))$mytabl
+    })
+  })
+  
+  #PANEL UMBRALES TODO EL REGISTRO
+  valorReactivo_UmbralTodoRegistro <- reactiveValues(value_store = character() )
+  accionarUmbralesTodoRegistro <- reactiveVal()
+  observeEvent(eventExpr = input$EnterUmbralRegistroTotal,
+               {valorReactivo_UmbralTodoRegistro$value_store <- input$ParamUmbralRegistroTotal
+               accionarUmbralesTodoRegistro(
+                 umbralesTodoRegistro(listado_archivos[[ match(input$EstacionUmbralRegistroTotal,nombres_estaciones) ]],
+                                      valorReactivo_UmbralTodoRegistro$value_store,
+                                      as.numeric(input$ValorUmbralRegistroTotal) )$mytabl )
+               })
+  output$tablaUmbralRegistroTotal <- render_gt({ accionarUmbralesTodoRegistro() })
+  
+  #PANEL RACHAS
+  accionarRachas <- reactiveVal()
+  valorReactivo_Rachas <- reactiveValues(value_store = character() )
+  valorReactivo_Rachas_Comparacion <- reactiveValues(value_store = character() )
+  observeEvent(eventExpr = input$EnterRachas,
+               { valorReactivo_Rachas$value_store <- input$VariableRachas
+               valorReactivo_Rachas_Comparacion$value_store <- input$ComparacionRachas
+                 accionarRachas( 
+                 rachas(listado_archivos[[match(input$EstacionRachas,nombres_estaciones)]],
+                        valorReactivo_Rachas$value_store,
+                        valorReactivo_Rachas_Comparacion$value_store,
+                        as.numeric(input$UmbralRachas),
+                        as.numeric(input$DuracionRachas)) )
+               })
+  output$OutputRachas <- renderPrint({accionarRachas()})
+  
+  #PANEL TOP FIVE
+  accionarTopFive <- reactiveVal()
+  valorReactivo_TopFive <- reactiveValues(value_store = character() )
+  valorReactivo_TopFive_Orden <- reactiveValues(value_store = character() )
+  observeEvent(eventExpr = input$EnterTopFive,
+               { valorReactivo_TopFive$value_store <- input$VariableTopFive
+               valorReactivo_TopFive_Orden$value_store <- input$OrdenTopFive
+               accionarTopFive( 
+                 top_five(listado_archivos[[match(input$EstacionTopFive,nombres_estaciones)]],
+                        valorReactivo_TopFive$value_store,
+                        valorReactivo_TopFive_Orden$value_store ) )
+               })
+  output$OutputTopFive <- renderPrint({ accionarTopFive() })
+  
+  #PANEL TABLAS ANUALES
+  observeEvent(input$EnterDatos, {
+    output$tablaDatos <- render_gt({
+      tablaAnual(listado_archivos[[match(input$EstacionDatos,nombres_estaciones)]],input$AnioDatos)
+    })
+  })
+  
+  #------------------GRÁFICOS Y MAPAS-------------------------------------------
+  
+  #PANEL GRÁFICOS DE SERIES TEMPORALES (POR AHORA MENSUALES)
+  observeEvent(input$EnterSerieTemp, {
+    output$graficoSerieTemp <- renderPlot({
+      posicionGrafMens <- match(input$EstacionSerieTemp, nombres_estaciones)
+      graf_serie_temporal(listado_archivos[[posicionGrafMens]],
+                          mes = as.numeric(input$MesSerieTemp),
+                          variable = input$VariableSerieTemp,
+                          estadistica =  input$EstadisticaSerieTemp)
+    })
+  })
+  
+  observeEvent(input$AntMesGrafMensual, {
+    current_month <- as.numeric(input$MesSerieTemp)
+    new_month <- if (current_month == 1) 12 else current_month - 1
+    updateSelectInput(inputId = "MesSerieTemp", choices = 1:12, selected = new_month)
+    output$graficoSerieTemp <- renderPlot({
+      posicionGrafMens <- match(input$EstacionSerieTemp, nombres_estaciones)
+      graf_serie_temporal(listado_archivos[[posicionGrafMens]],
+                          mes = new_month,
+                          variable = input$VariableSerieTemp,
+                          estadistica =  input$EstadisticaSerieTemp )
+    })
+  })
+  
+  observeEvent(input$SigMesGrafMensual, {
+    current_month <- as.numeric(input$MesSerieTemp)
+    new_month <- if (current_month == 12) 1 else current_month + 1
+    updateSelectInput(inputId = "MesSerieTemp", choices = 1:12, selected = new_month)
+    output$graficoSerieTemp <- renderPlot({
+      posicionGrafMens <- match(input$EstacionSerieTemp, nombres_estaciones)
+      graf_serie_temporal(listado_archivos[[posicionGrafMens]], 
+                          mes = new_month,
+                          variable = input$VariableSerieTemp,
+                          estadistica =  input$EstadisticaSerieTemp )
+    })
+  })
+  
+  #GRAFICO MEDIA MÓVIL
+  accionarMediaMovil <- reactiveVal()
+  observeEvent(eventExpr = input$EnterMediaMovil,
+               {accionarMediaMovil(
+                 grafico_media_movil(archivo = listado_archivos[[match(input$EstacionMediaMovil,nombres_estaciones)]],
+                                    variable = input$VariableMediaMovil,
+                                    anio_target = as.integer(input$AnioMediaMovil) ) )
+               })
+  output$graficoMediaMovil <- renderPlot({ accionarMediaMovil() })
+  
+  #PANEL HEATMAP
+  valorReactivo_Heatmap <- reactiveValues(value_store = character() )
+  accionarHeatmap <- reactiveVal()
+  observeEvent(eventExpr = input$GrafHeatmap,
+               {valorReactivo_Heatmap$value_store <- input$ParametroHeatmap
+               accionarHeatmap( graficoHeatmap(listado_archivos[[ match(input$EstacionHeatmap,nombres_estaciones) ]],
+                                               as.numeric(input$MesHeatmap),
+                                               valorReactivo_Heatmap$value_store ))
+               })
+  output$graphHeatmap <- renderPlot({accionarHeatmap()})
+  
+  #GRAFICO FUNCION DENSIDAD PROBABILIDAD
+  accionarDensidad <- reactiveVal()
+  observeEvent(eventExpr = input$EnterDensidad,
+               {accionarDensidad(
+                 grafComparacionDensidad(archivo = listado_archivos[[match(input$EstacionDensidad,nombres_estaciones)]],
+                                     variable = input$VariableDensidad,
+                                     anio1 = as.integer(input$AnioDensidad1),
+                                     anio2 = as.integer(input$AnioDensidad2),
+                                     extension = as.integer(input$ExtensionDensidad) ) )
+               })
+  output$graficoDensidad <- renderPlot({ accionarDensidad() })
+  
+  #PANEL BOXPLOTS
+  observeEvent(input$EnterBoxplots, {
+    output$Boxplots <- renderPlot({
+      grafBoxplots(listado_archivos[[ match(input$EstacionBoxplots,nombres_estaciones) ]],
+                   input$ParametroBoxplots,
+                   as.numeric(input$AnioBoxplot))
+    })
+  })
+  
+  #PANEL BOXPLOTS MÓVILES
+  observeEvent(input$EnterBoxmovil, {
+    output$Boxplotmovil <- renderPlot({
+      box_movil(listado_archivos[[ match(input$EstacionBoxmovil,nombres_estaciones) ]],
+               input$ParametroBoxmovil,
+               as.numeric(input$ExtensionBoxmovil))
+    })
+  })
+  
+  #PANEL FDP
+  observeEvent(input$EnterFDP, {
+    output$graficoFDP <- renderPlot({
+      distribucion(listado_archivos[[ match(input$EstacionFDP,nombres_estaciones) ]],
+                   input$ParametroFDP)
+    })
+  })
+  
+  #PANEL GRAFICO SERIE COMPLETA
+  observeEvent(input$GrafSerieCompleta, {
+    output$graphSerieCompleta <- renderPlot({
+      grafSerieCompleta(listado_archivos[[ match(input$EstacionGrafCompleto,nombres_estaciones) ]])
+    })
+  })
+  
+  #------------------ANÁLISIS---------------------------------------------------
+  #PANEL CORRELACIONES
+  accionarCorr <- reactiveVal()
+  observeEvent(eventExpr = input$EnterCorr,
+               {accionarCorr(
+                 corrDatosDiarios(listado_archivos[[match(input$EstacionCorr1,nombres_estaciones)]],
+                                  listado_archivos[[match(input$EstacionCorr2,nombres_estaciones)]],
+                                  input$RestringirCorrelaciones[1],
+                                  input$RestringirCorrelaciones[2] ))
+               })
+  output$tablaCorr <- render_gt({ accionarCorr() })
+  
+  #PANEL DATOS FALTANTES
+  observeEvent(input$EnterFaltantes, {
+    output$tablaFaltantes <- render_gt({
+      tabla_datos_faltantes(listado_archivos[[match(input$EstacionFaltantes,nombres_estaciones)]],
+                    input$VariableFaltantes)
+    })
+  })
+  
+  #PANEL MÄS RËCORDS
+  observeEvent(input$EnterRecordsAmplitudDiaria, {
+    output$tablaMasRecords <- render_gt({
+      records_amplitud_termica(listado_archivos[[match(input$EstacionMasRecords,nombres_estaciones)]])
+    })
+  })
+  
+  observeEvent(input$EnterRecordsPrimQuincena, {
+    output$tablaMasRecords <- render_gt({
+      records_quincenales(listado_archivos[[match(input$EstacionMasRecords,nombres_estaciones)]],
+                          1961, 1)
+    })
+  })
+  
+  observeEvent(input$EnterRecordsSegunQuincena, {
+    output$tablaMasRecords <- render_gt({
+      records_quincenales(listado_archivos[[match(input$EstacionMasRecords,nombres_estaciones)]],
+                          1961, 2)
+    })
+  })
+  
+  #PANEL RANKING
+  accionarRanking <- reactiveVal()
+  observeEvent(input$EnterRanking, {
+    withProgress(value = 0, message = 'Construyendo el ránking...',{
+      accionarRanking( ranking(input$DiaRanking,input$MesRanking,input$AnioRanking,input$VariableRanking) )
+      } )
+  })
+  output$tablaRanking <- render_gt({ accionarRanking()  })
+  
+  #PANEL EVOLUCIÓN CORRELACIÓN
+  observeEvent(input$EnterEvolCorrel, {
+    output$graficoEvolCorrel <- renderPlot({
+      evolucion_correl(listado_archivos[[ match(input$EstacionEvolCorrel1,nombres_estaciones) ]],
+                       listado_archivos[[ match(input$EstacionEvolCorrel2,nombres_estaciones) ]],
+                       input$VariableEvolCorrel,
+                       as.integer(input$NAniosEvolCorrel),
+                       input$TipoEvolCorrel)
+    })
+  })
+  
+  #PANEL INCONSISTENCIAS
+  observeEvent(input$EnterInconsistencias, {
+    output$OutputInconsistencias <- renderPrint({
+      busqueda_inconsistencias(listado_archivos[[match(input$EstacionInconsistencias,nombres_estaciones)]],
+                            input$VariableInconsistencias)
+    })
+  })
+  
+  #PANEL REANALISIS
+  observeEvent(input$EnterReanalisis, {
+    output$ReanalisisMapa <- renderImage({
+      anio <- input$AnioReanalisis
+      mes <- as.integer(input$MesReanalisis)
+      var <- as.character(input$VariableReanalisis)
+      filename <- ifelse(mes <10,paste0(anio,'0',mes,'.png'),paste0(anio,mes,'.png'))
+      direccion <- paste0('EstudioAnomalias/',var,'/',tolower(var),filename)
+      list(src = here(direccion), contentType = 'image/png', alt = "Mapa de anomalías",width = 800, height=900)
+    },deleteFile = F)
+  })
+  
+  observeEvent(eventExpr = input$SigEnterReanalisis, {
+    
+    anio <- as.integer(input$AnioReanalisis)
+    mes <- as.integer(input$MesReanalisis)
+    var <- as.character(input$VariableReanalisis)
+    
+    mes_mostrado <- ifelse(mes == 12, 1,mes+1)
+    updateSelectInput(inputId = "MesReanalisis",
+                      choices = 1:12,
+                      selected = mes_mostrado )
+    
+    anio_mostrado <- ifelse(mes == 12, anio + 1,anio)
+    updateSelectInput(inputId = "AnioReanalisis",
+                      choices = 1971:2025,
+                      selected = anio_mostrado )
+  })
+  
+  observeEvent(input$MinimasReanalisis, {
+    output$tablaReanalisis <- render_gt({ minimas_reanalisis() })
+  })
+  
+  observeEvent(input$MaximasReanalisis, {
+    output$tablaReanalisis <- render_gt({ maximas_reanalisis() })
+  })
+  
+  
+  
+}
+  
+# CORRER LA APLICACIÓN
+shinyApp(ui = ui, server = server)
