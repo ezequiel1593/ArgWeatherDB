@@ -1,0 +1,47 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f4;
+    text-align: center;
+    /* padding: 50px; */
+}
+
+/* BOTONES */
+button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 20px; /* arriba y abajo | izquierda y derecha */
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+button:hover {
+    background-color: orange;
+}
+
+.contenedor {
+  max-width: 1000px;
+  margin: 0 auto; /* centra pagina en la pantalla */
+}
+
+.encabezado {
+  text-align: center;
+  border-bottom: 2px solid #ccc;
+}
+
+.cuerpo {
+  display: flex; /* Pone los elementos uno al lado del otro */
+}
+
+.lateral {
+  flex: 1; /* Ocupa 1 parte del espacio (el 25%) */
+  background: #ddd;
+  padding: 20px;
+}
+
+.principal {
+  flex: 3; /* Ocupa 3 partes del espacio (el 75%) */
+  background: #f4f4f4;
+  padding: 20px;
+}
+
