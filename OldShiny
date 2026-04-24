@@ -843,3 +843,1790 @@ server <- function(input, output, session) {
   
 # CORRER LA APLICACIÓN
 shinyApp(ui = ui, server = server)
+
+library(here)
+library(gt)
+library(ggplot2)
+library(ggblanket)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+#library(RColorBrewer) #Funcion Brewer.pal
+#library(scales) #Para pretty_breaks
+rm(list=ls())
+
+listado_archivos <- list.files(here("Data"),pattern="*.txt") #116 estaciones
+substrRight <- function(x) {substr(x, 1, nchar(x)-4)} #Decia -23
+nombres_estaciones <- substrRight(listado_archivos)
+obtenerNombreBreve <- function(x) { sub(" \\(.*", "", x) }
+listado_estaciones_exclusivo <- function(exc_otras_redes = TRUE, exc_antartida = TRUE, 
+                                         exc_desactivadas = TRUE, exc_ICU = TRUE) {
+  nombre_corto <- obtenerNombreBreve(nombres_estaciones)
+  otras_redes <- c('Balcarce INTA','Bella Vista INTA','Castelar INTA','Cerro Azul INTA','Hilario Ascasubi INTA','La Consulta INTA','Las Breñas INTA','San Pedro INTA',
+                   'General Pizarro EEAOC','Santa Ana EEAOC')
+  antartida <- c('Base Belgrano II','Base Carlini','Base Esperanza','Base Marambio','Base Orcadas','Base San Martín')
+  desactivadas <- c('Azul','Catamarca Aero I','Chacras de Coria','Cipolletti I','Curuzú Cuatía','Don Torcuato Aero','El Bolsón I','Malargüe','Lago Argentino Aero',
+                    'Laprida','San Antonio Oeste I','San Juan Aero I','San Miguel','Tucumán Aero I','Ushuaia Aero I','Villaguay Aero')
+  ICU <- c('Aeroparque','Buenos Aires Observatorio Central','Córdoba Observatorio','Córdoba Observatorio 1873-2025','Ezeiza Aero','El Palomar Aero','Morón Aero','San Fernando Aero')
+  excluidos <- c()
+  if (exc_otras_redes) { excluidos <- c(excluidos, otras_redes) }
+  if (exc_antartida) { excluidos <- c(excluidos, antartida) }
+  if (exc_desactivadas) { excluidos <- c(excluidos, desactivadas) }
+  if (exc_ICU) { excluidos <- c(excluidos, ICU) }
+  indices <- which(nombre_corto %in% c(excluidos))
+  return(indices)
+  #return(listado_archivos[-indices])
+}
+
+#-------------------------------------------------------------------------------
+#-----------------------------FUNCIONES COMUNES---------------------------------
+#-------------------------------------------------------------------------------
+
+mediaMensualNA <- function(x) {
+  cantidadNA <- sum(is.na(x))
+  if (cantidadNA >5) {resultado <- NA
+  } else {resultado <- mean(x, na.rm=TRUE)}
+  return(resultado)
+}
+
+obtenerDatos <- function(archivo){
+  
+  datos <- read.table(here("Data",archivo),
+                      header = TRUE,
+                      #col.names = c("A","M","D","Tmax","Tmin"),
+                      na.strings = "",
+                      sep = '\t')
+  
+  datos$Tmax <- as.numeric(datos$Tmax)
+  datos$Tmin <- as.numeric(datos$Tmin)
+  
+  return(datos)
+}
+
+obtener_mytable <- function (tabla, titulo, colores, dominio, interactivo=FALSE) {
+  
+  mytabl <- tabla |> gt() |>
+    tab_header(title = md(paste0('**', titulo, '**'))) |>
+    cols_add(Año = rownames(tabla),.before = 'Ene') |>
+    fmt_number(columns = 2:13,decimals = 1) |>
+    tab_style(style = cell_text(weight = 'bold'),locations = cells_column_labels()) |>
+    tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1)) |>
+    cols_width(c(2:13) ~ px(63)) |>
+    cols_width(Año ~ px(54)) |>
+    data_color(columns = c(2:13),method = 'numeric', palette = colores, domain = dominio) |>
+    tab_options(container.width = px(810))
+  
+  if (interactivo == TRUE) { mytabl <- mytabl |> opt_interactive(use_pagination = F,use_search = F) }
+  
+  return(mytabl)
+}
+
+#-------------------------------------------------------------------------------
+#-------------------FUNCIONES ESCALA MENSUAL------------------------------------
+#-------------------------------------------------------------------------------
+
+records <- function(archivo, anio) {
+  
+  datos <- obtenerDatos(archivo)
+  datos$Fecha <- as.Date(paste0(datos$A, "-", datos$M, "-", datos$D), format = "%Y-%m-%d")
+  
+  primer_anio <- datos[2, 1]
+  ultimo_anio <- datos[nrow(datos), 1]
+  
+  datos <- subset(datos, A >= anio)
+  
+  # Inicializar listas para almacenar resultados
+  records_minimos <- aggregate(cbind(Tmin, Tmax) ~ M, data = datos, FUN = min, na.rm = TRUE)
+  records_maximos <- aggregate(cbind(Tmin, Tmax) ~ M, data = datos, FUN = max, na.rm = TRUE)
+  
+  fechas_tnn <- character(12)
+  fechas_txn <- character(12)
+  fechas_tnx <- character(12)
+  fechas_txx <- character(12)
+  
+  for (mes in 1:12) {
+    subdatos <- subset(datos, M == mes)
+    
+    # Manejar casos donde no hay datos para el mes
+    if (nrow(subdatos) == 0) {
+      fechas_tnn[mes] <- NA
+      fechas_txn[mes] <- NA
+      fechas_tnx[mes] <- NA
+      fechas_txx[mes] <- NA
+      next
+    }
+    
+    # Tnn: Fecha del mínimo de Tmin
+    posicion_fecha_tnn <- which(subdatos$Tmin == records_minimos$Tmin[records_minimos$M == mes])
+    fechas_tnn[mes] <- if (length(posicion_fecha_tnn) > 0) {
+      paste(subdatos$Fecha[posicion_fecha_tnn], collapse = "\n")
+    } else {
+      NA
+    }
+    
+    # Txn: Fecha del mínimo de Tmax
+    posicion_fecha_txn <- which(subdatos$Tmax == records_minimos$Tmax[records_minimos$M == mes])
+    fechas_txn[mes] <- if (length(posicion_fecha_txn) > 0) {
+      paste(subdatos$Fecha[posicion_fecha_txn], collapse = "\n")
+    } else {
+      NA
+    }
+    
+    # Tnx: Fecha del máximo de Tmin
+    posicion_fecha_tnx <- which(subdatos$Tmin == records_maximos$Tmin[records_maximos$M == mes])
+    fechas_tnx[mes] <- if (length(posicion_fecha_tnx) > 0) {
+      paste(subdatos$Fecha[posicion_fecha_tnx], collapse = "\n")
+    } else {
+      NA
+    }
+    
+    # Txx: Fecha del máximo de Tmax
+    posicion_fecha_txx <- which(subdatos$Tmax == records_maximos$Tmax[records_maximos$M == mes])
+    fechas_txx[mes] <- if (length(posicion_fecha_txx) > 0) {
+      paste(subdatos$Fecha[posicion_fecha_txx], collapse = "\n")
+    } else {
+      NA
+    }
+  }
+  
+  # Crear el data.frame asegurando 12 filas
+  tabla <- data.frame(
+    Mes = c("Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"),
+    Tnn = records_minimos$Tmin[match(1:12, records_minimos$M)],
+    Fecha_Tnn = fechas_tnn,
+    Tnx = records_maximos$Tmin[match(1:12, records_maximos$M)],
+    Fecha_Tnx = fechas_tnx,
+    Txn = records_minimos$Tmax[match(1:12, records_minimos$M)],
+    Fecha_Txn = fechas_txn,
+    Txx = records_maximos$Tmax[match(1:12, records_maximos$M)],
+    Fecha_Txx = fechas_txx
+  )
+  
+  # Reemplazar posibles NA en valores numéricos
+  tabla$Tnn[is.na(tabla$Tnn)] <- NA
+  tabla$Tnx[is.na(tabla$Tnx)] <- NA
+  tabla$Txn[is.na(tabla$Txn)] <- NA
+  tabla$Txx[is.na(tabla$Txx)] <- NA
+  
+  titulo <- paste0('Récords en ', sub(pattern = "\\s*\\(.*" ,replacement = "" ,x = archivo),' ',
+                   ifelse(anio<primer_anio,primer_anio,anio),'-',ultimo_anio )
+  
+  mytabl <- tabla |> gt() |>
+    tab_header(title = md(paste0("**", titulo, "**"))) |>
+    fmt_number(columns = c(2, 4, 6, 8), decimals = 1) |>
+    tab_style(style = cell_text(weight = "bold"), locations = cells_column_labels()) |>
+    tab_style(style = cell_text(weight = "bold"), locations = cells_body(columns = 1)) |>
+    cols_width(c(3, 5, 7, 9) ~ px(95)) |>
+    data_color(
+      columns = c(2, 4, 6, 8),
+      method = "numeric",
+      palette = c("#8000ff", "#62be7a", "#ffeb84", "#f8696b"),
+      domain = c(-40, 50)
+    )
+  
+  return(mytabl)
+}
+
+umbrales <- function(archivo, comparacionUmbral, umbral, mes) {
+  datos <- obtenerDatos(archivo)
+  
+  datos_del_mes <- subset(datos, M == mes)
+  
+  if (comparacionUmbral == "Tmin <=") {
+    tabla <- subset(datos_del_mes, Tmin <= umbral)
+  } else if (comparacionUmbral == "Tmin >=") {
+    tabla <- subset(datos_del_mes, Tmin >= umbral)
+  } else if (comparacionUmbral == "Tmax <=") {
+    tabla <- subset(datos_del_mes, Tmax <= umbral)
+  } else if (comparacionUmbral == "Tmax >=") {
+    tabla <- subset(datos_del_mes, Tmax >= umbral)
+  }
+  
+  titulo <- paste0('Dias con ',comparacionUmbral,umbral,'°C en ',substr(archivo, 1, nchar(archivo) - 4),'.')
+  
+  mytabl <- as.data.frame(tabla) |> gt() |>
+    tab_header(title = md(paste0('**', titulo , '**'))) |>
+    fmt_number(columns = 4:5,decimals = 1) |>
+    cols_width(everything() ~ px(67)) |>
+    tab_options(container.width = px(67*5)) |>
+    opt_interactive(use_pagination = F,use_search = F)
+  
+  return(mytabl)
+}
+
+frecuenciaMensualNA <- function(x, comparacion, umbral) {
+  cantidadNA <- sum(is.na(x))
+  if (cantidadNA > 5) {resultado <- NA
+  } else {
+    if (comparacion == '>=') {
+      resultado <- sum(x >= umbral,na.rm = TRUE)
+    } else if (comparacion == '<=') {
+      resultado <- sum(x <= umbral,na.rm = TRUE)
+    }
+  }
+  return(resultado)
+}
+#TAMBIEN MOSTRAR DATOS ESTACIONALES Y ANUALES DE MANERA OPTATIVA, ACORDARSE!!
+frecuencias <- function(archivo, variable, comparacion, umbral, extra = FALSE) {
+  
+  datos <- obtenerDatos(archivo)
+  
+  tablaFrecuencias <- tapply(datos[[variable]], list(datos$A, datos$M),
+                             function(x) { frecuenciaMensualNA(x, comparacion, umbral) } )
+  
+  colnames(tablaFrecuencias) <- c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+  
+  titulo <- paste0('Frecuencia de ',variable,comparacion,umbral,
+                   '°C en ',obtenerNombreBreve(archivo),'.')
+  
+  if (extra == TRUE) {
+    
+    tablaFrecuencias <- as.data.frame(tablaFrecuencias)
+    tablaFrecuencias$Dic_Ant <- lag(tablaFrecuencias[,'Dic'])
+    
+    tablaFrecuencias <- tablaFrecuencias %>%
+      mutate('Ver'= Dic_Ant + Ene + Feb,
+             'Oto'= Mar + Abr + May,
+             'Inv'= Jun + Jul + Ago,
+             'Pri'= Sep + Oct + Nov,
+             'Anu'= Ene + Feb + Mar + Abr + May + Jun + Jul + Ago + Sep + Oct + Nov + Dic) %>%
+      select(-Dic_Ant)
+    
+    nombres_viejos <- names(tablaFrecuencias)[1:18]
+    nombres_nuevos <- substr(nombres_viejos,1,1)
+    
+    mytabl <- tablaFrecuencias |> gt() |>
+      tab_header(title = md(paste0('**', titulo, '**'))) |>
+      cols_add(Año = rownames(tablaFrecuencias),.before = 'Ene') |>
+      fmt_number(columns = 2:18,decimals = 0) |>
+      tab_style(style = cell_text(weight = 'bold'),locations = cells_column_labels()) |>
+      tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1)) |>
+      cols_width(c(2:17) ~ px(43)) |>
+      cols_width(c(18) ~ px(50)) |>
+      cols_width(Año ~ px(53)) |>
+      data_color(columns = c(2:13),method = 'numeric',
+                 palette = c("#ffffff","#ffeb84","#f8696b"), domain = c(0,31)) |>
+      data_color(columns = c(14:17),method = 'numeric',
+                 palette = c("#ffffff","#ffeb84","#f8696b"), domain = c(0,92)) |>
+      data_color(columns = c(18),method = 'numeric',
+                 palette = c("#ffffff","#ffeb84","#f8696b"), domain = c(0,366)) |>
+      tab_options(container.width = px(792)) |>
+      tab_style(style = list(cell_borders(sides = 'left',color = '#D3D3D3',weight = px(3))),
+                locations = list(cells_body(columns = c(Ene,Ver,Anu)))) |> 
+      opt_interactive(use_pagination = F,use_search = F) |>
+      cols_label(.list = setNames(as.list(nombres_nuevos), nombres_viejos) )
+    
+  } else {
+    
+    mytabl <- obtener_mytable(as.data.frame(tablaFrecuencias), titulo,
+                              colores = c("#ffffff","#ffeb84","#f8696b"), dominio = c(0,31), interactivo=TRUE) |>
+      fmt_number(columns = 2:13,decimals = 0)
+    
+  }
+  
+  return(mytabl)
+}
+
+tabla_mensual <- function(archivo, variable, extra = FALSE) {
+  datos <- obtenerDatos(archivo)
+  
+  if (variable == "tnm") {
+    tabla <- tapply(datos$Tmin, list(datos$A, datos$M),
+                    function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, round(mean(x, na.rm=T),1), NA ) } )
+  } else if (variable == "txm") {
+    tabla <- tapply(datos$Tmax, list(datos$A, datos$M),
+                    function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, round(mean(x, na.rm=T),1), NA ) } )
+  } else if (variable == "tnn") {
+    tabla <- tapply(datos$Tmin, list(datos$A, datos$M),
+                    function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, min(x, na.rm=T), NA ) } )
+  } else if (variable == "tnx") {
+    tabla <- tapply(datos$Tmin, list(datos$A, datos$M),
+                    function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, max(x, na.rm=T), NA ) } )
+  } else if (variable == "txn") {
+    tabla <- tapply(datos$Tmax, list(datos$A, datos$M),
+                    function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, min(x, na.rm=T), NA ) } )
+  } else if (variable == "txx") {
+    tabla <- tapply(datos$Tmax, list(datos$A, datos$M),
+                    function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, max(x, na.rm=T), NA ) } )
+  }
+  
+  colnames(tabla) <- c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+  
+  nombre_parametro <- switch(variable,"tnm"="Temperatura mínima media",
+                             "txm"="Temperatura máxima media",
+                             "tnn"="Temperatura mínima más baja",
+                             "tnx"="Temperatura mínima más alta",
+                             "txn"="Temperatura máxima más baja",
+                             "txx"="Temperatura máxima más alta")
+  
+  titulo <- paste0(nombre_parametro,' en ',substr(archivo, 1, nchar(archivo) - 4),'.')
+  
+  if (extra == TRUE) {
+    
+    tabla <- as.data.frame(tabla)
+    tabla$Dic_Ant <- lag(tabla[,'Dic'])
+    
+    if (variable %in% c('tnn','txn')) {
+      tabla <- tabla %>%
+        mutate('Ver'= pmin(Dic_Ant,Ene,Feb),
+               'Oto'= pmin(Mar,Abr,May),
+               'Inv'= pmin(Jun,Jul,Ago),
+               'Pri'= pmin(Sep,Oct,Nov),
+               'Anu'= pmin(Ene,Feb,Mar,Abr,May,Jun,Jul,Ago,Sep,Oct,Nov,Dic)) %>%
+        select(-Dic_Ant)
+    } else if (variable %in% c('tnx','txx')) {
+      tabla <- tabla %>%
+        mutate('Ver'= pmax(Dic_Ant,Ene,Feb),
+               'Oto'= pmax(Mar,Abr,May),
+               'Inv'= pmax(Jun,Jul,Ago),
+               'Pri'= pmax(Sep,Oct,Nov),
+               'Anu'= pmax(Ene,Feb,Mar,Abr,May,Jun,Jul,Ago,Sep,Oct,Nov,Dic)) %>%
+        select(-Dic_Ant)
+    }
+    
+    nombres_viejos <- names(tabla)[1:18]
+    nombres_nuevos <- substr(nombres_viejos,1,1)
+    
+    mytabl <- tabla |> gt() |>
+      tab_header(title = md(paste0('**', titulo, '**'))) |>
+      cols_add(Año = rownames(tabla),.before = 'Ene') |>
+      fmt_number(columns = 2:18,decimals = 1) |>
+      tab_style(style = cell_text(weight = 'bold'),locations = cells_column_labels()) |>
+      tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1)) |>
+      cols_width(c(2:18) ~ px(49)) |>
+      cols_width(Año ~ px(52)) |>
+      data_color(columns = c(2:18),method = 'numeric',
+                 palette = c("#8000ff","#62be7a","#ffeb84","#f8696b"), domain = c(-40,50)) |>
+      tab_options(container.width = px(884)) |>
+      tab_style(style = list(cell_borders(sides = 'left',color = '#D3D3D3',weight = px(3))),
+                locations = list(cells_body(columns = c(Ene,Ver,Anu)))) |> 
+      opt_interactive(use_pagination = F,use_search = F) |>
+      cols_label(.list = setNames(as.list(nombres_nuevos), nombres_viejos) )
+    
+  } else {
+    
+    mytabl <- obtener_mytable(as.data.frame(tabla), titulo,
+                              colores = c("#8000ff","#62be7a","#ffeb84","#f8696b"), dominio = c(-40,50),
+                              interactivo=TRUE)
+  }
+  
+  return(list("mytabl"=mytabl,
+              "tabla"=as.data.frame(tabla)) )
+}
+
+desvioEstandarMensual <- function(archivo, variable) {
+  
+  datos <- obtenerDatos(archivo)
+  
+  tabla <- tapply(datos[[variable]], list(datos$A, datos$M),
+                  function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, round(sd(x, na.rm=T),1), NA ) } )
+  
+  colnames(tabla) <- c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+  
+  nombre_parametro <- switch(variable,"Tmin"="Desvío estándar de la temperatura mínima",
+                             "Tmax"="Desvío estándar de la temperatura máxima")
+  
+  titulo <- paste0(nombre_parametro,' en ',substr(archivo, 1, nchar(archivo) - 4),'.')
+  
+  mytabl <- obtener_mytable(as.data.frame(tabla), titulo,
+                           colores = c("#3333ff","#ffffff","#cc0000"), dominio = c(0,12),
+                           interactivo=TRUE)
+  
+  return(list("mytabl"= mytabl,
+              "tabla"= as.data.frame(tabla)) )
+  
+}
+
+medianaMensualTabla <- function(archivo, variable) {
+  
+  datos <- obtenerDatos(archivo)
+  
+  tabla <- tapply(datos[[variable]], list(datos$A, datos$M),
+                  function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, round(median(x, na.rm=T),1), NA ) } )
+  
+  colnames(tabla) <- c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+  
+  nombre_parametro <- switch(variable,"Tmin"="Temperatura mínima mediana",
+                             "Tmax"="Temperatura máxima mediana")
+  
+  titulo <- paste0(nombre_parametro,' en ',substr(archivo, 1, nchar(archivo) - 4),'.')
+  
+  mytabl <- obtener_mytable(as.data.frame(tabla), titulo,
+                           colores = c("#8000ff","#62be7a","#ffeb84","#f8696b"), dominio = c(-40,50),
+                           interactivo=TRUE)
+  
+  return(list("mytabl"=mytabl,
+              "tabla"=as.data.frame(tabla)) )
+}
+
+anomalias <- function(archivo, variable, periodo) {
+  
+  tabla_valores_normales <- valores_normales(archivo,periodo)$tabla
+  
+  datos <- obtenerDatos(archivo)
+  
+  tabla <- tapply(datos[[ variable ]], list(datos$A, datos$M),
+                  function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, round(mean(x, na.rm=T),1), NA ) } )
+  
+  if (variable == "Tmin") {
+    valoresNormales <- tabla_valores_normales$Tnm
+  } else if (variable == "Tmax") {
+    valoresNormales <- tabla_valores_normales$Txm
+  }
+  
+  if (is.null(valoresNormales)) { 
+    tabla <- data.frame("SD"= c("Sin valores normales para este período."))
+    mytabl <- gt(data = tabla)
+    
+    return(list("mytabl"= mytabl,
+                "tabla"= NULL) )
+    }
+  
+  for (fila in 1:nrow(tabla)) { tabla[fila,] <- tabla[fila,] - valoresNormales }
+  
+  colnames(tabla) <- c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+  
+  nombre_parametro <- switch(variable,"Tmin"="Temperatura mínima media",
+                             "Tmax"="Temperatura máxima media")
+  
+  año_inicio <- switch(periodo,1911,1921,1931,1941,1951,1961,1971,1981,1991)
+  año_final <- switch(periodo,1940,1950,1960,1970,1980,1990,2000,2010,2020)
+  
+  titulo <- paste0('Anomalía de la ',nombre_parametro,' en ',
+                   substrRight(archivo),' respecto al período ',año_inicio,'-',año_final,'.')
+  
+  paleta <- scales::col_numeric(palette = c("#3333ff","#ffffff","#cc0000"),domain = c(-7,7))
+  
+  mytabl <- as.data.frame(tabla) |> gt() |>
+    tab_header(title = md(paste0('**', titulo, '**'))) |>
+    cols_add(Año = rownames(tabla),.before = 'Ene') |>
+    fmt_number(columns = 2:13,decimals = 1) |>
+    tab_style(style = cell_text(weight = 'bold'),locations = cells_column_labels()) |>
+    tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1)) |>
+    cols_width(c(2:13) ~ px(63)) |>
+    cols_width(Año ~ px(54)) |>
+    data_color(columns = 2:13,
+               colors = function(x) {case_when(is.na(x) ~ "gray",
+                                               x >= 7 ~"#cc0000",
+                                               x <= -7 ~ "#3333ff",
+                                               TRUE ~ paleta(x))} ) |>
+    tab_options(container.width = px(810)) |>
+    opt_interactive(use_pagination = F,use_search = F)
+
+  return(list("mytabl"= mytabl,
+              "tabla"= as.data.frame(tabla)) )
+  
+}
+
+anomalia_estandarizada <- function(archivo,variable,periodo) {
+  
+  tabla_anomalias <- anomalias(archivo,variable,periodo)$tabla
+  
+  if (is.null(tabla_anomalias)) { 
+    tabla <- data.frame("SD"= c("Sin valores normales para este período."))
+    mytabl <- gt(data = tabla)
+    
+    return(list("mytabl"= mytabl,
+                "tabla"= NULL) )
+  }
+  
+  #El desvío estándar de las anomalías es igual al desvío estándar de los valores 'crudos'
+  anio_inicio <- ((periodo -1)*10) + 1911 ; anio_final <- anio_inicio + 29
+  datos_periodo <- tabla_anomalias[row.names(tabla_anomalias) >= anio_inicio & row.names(tabla_anomalias) <= anio_final,]
+  desvios_normales <- apply(datos_periodo,MARGIN = 2,
+                            FUN = function(x) {ifelse(sum(!is.na(x)) < 27,
+                                                      NA,
+                                                      sd(x,na.rm = TRUE))})
+  
+  tablaFinal <- t(apply(tabla_anomalias,MARGIN = 1,
+                        FUN = function(x) round(x/desvios_normales,1)))
+  
+  nombre_parametro <- switch(variable,"Tmin"="Temperatura mínima media",
+                             "Tmax"="Temperatura máxima media")
+  
+  titulo <- paste0('Anomalias estandarizadas de la ',nombre_parametro,' en ',
+                   obtenerNombreBreve(archivo),' respecto al período ',anio_inicio,'-',anio_final,'.')
+  
+  mytabl <- obtener_mytable(as.data.frame(tablaFinal),titulo,
+                            colores = c("#3333ff","#ffffff","#cc0000"),dominio = c(-7,7),
+                            interactivo = TRUE)
+  
+  return(list("mytabl"= mytabl,
+              "tabla"= as.data.frame(tablaFinal)) )
+}
+
+percentiles <- function(archivo, periodo, variable) {
+  
+  año_inicio <- switch(periodo,1911,1921,1931,1941,1951,1961,1971,1981,1991)
+  año_final <- switch(periodo,1940,1950,1960,1970,1980,1990,2000,2010,2020)
+  
+  datos <- obtenerDatos(archivo)
+  subdatos <- subset(datos, (A >= año_inicio) & (A <= año_final) )
+  
+  if (NROW(subdatos) == 0) {
+    
+    tabla <- data.frame("SD"= c("Sin datos para este período."))
+    mytabl <- gt(data = tabla)
+    
+  } else {
+    
+    myperc <- tapply(subdatos[[variable]], list(subdatos$M),
+                   function(x) round(quantile(x, probs= seq(0.05,0.95,0.05), na.rm = T),1) )
+  
+    tabla <- data.frame(do.call(cbind, myperc))
+    rownames(tabla) <- seq(5,95,5)
+    colnames(tabla) <- c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+    
+    #Cantidad de datos suficiente
+    cantidad_total_dias_teorica <- c(930,848,930,900,930,900,930,930,900,930,900,930)
+    for (i in (1:12)) {
+      control_subset <- subset(subdatos, M == i)
+      if ( sum(!is.na(control_subset[[variable]])) < (cantidad_total_dias_teorica[i]*0.85) ) {
+        tabla[,i] <- NA } }
+    
+    #ACÁ EMPIEZO CON MYTABL
+    nombre_parametro <- switch(variable,"Tmin"="temperatura mínima", "Tmax"="temperatura máxima")
+    
+    titulo <- paste0('Percentiles de la ',nombre_parametro,' en ',
+                     obtenerNombreBreve(archivo),', período ',año_inicio,'-',año_final,'.')
+    
+    mytabl <- tabla |> gt() |>
+      tab_header(title = md(paste0('**', titulo, '**'))) |>
+      fmt_number(columns = 1:12,decimals = 1) |>
+      cols_add(P = seq(5,95,5),.before = 'Ene') |>
+      tab_style(style = list(cell_text(weight = 'bold')),locations = cells_column_labels()) |>
+      tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1)) |>
+      cols_width(c(2:13) ~ px(50)) |>
+      cols_width(P ~ px(30)) |>
+      data_color(columns = 2:13,method = 'numeric',palette = c("#8000ff","#62be7a","#ffeb84","#f8696b"),domain = c(-40,50))
+    
+  } #Llave del else
+  
+  return(list("mytabl"=mytabl,
+              "tabla"=tabla) )
+  
+}
+
+diferencias_percentiles <- function(archivo, periodo1, periodo2, variable){
+  
+  datosPeriodo1 <- percentiles(archivo = archivo,periodo = periodo1,variable = variable)$tabla
+  datosPeriodo2 <- percentiles(archivo = archivo,periodo = periodo2,variable = variable)$tabla
+  
+  if (NROW(datosPeriodo2) != 19 || NROW(datosPeriodo1) != 19) {
+    tabla <- data.frame("SD"= c("Sin datos para alguno de los períodos."))
+    mytabl <- gt(data = tabla)
+  } else {
+    tabla <- datosPeriodo2 - datosPeriodo1
+    
+    #ACÁ EMPIEZO CON MYTABL
+    nombre_parametro <- switch(variable,"Tmin"="temperatura mínima",
+                               "Tmax"="temperatura máxima")
+    año_iniciop1 <- switch(periodo1,1911,1921,1931,1941,1951,1961,1971,1981,1991)
+    año_finalp1 <- switch(periodo1,1940,1950,1960,1970,1980,1990,2000,2010,2020)
+    año_iniciop2 <- switch(periodo2,1911,1921,1931,1941,1951,1961,1971,1981,1991)
+    año_finalp2 <- switch(periodo2,1940,1950,1960,1970,1980,1990,2000,2010,2020)
+    
+    titulo <- paste0('Diferencia en los percentiles de la ',nombre_parametro,
+                     ' del período ',año_iniciop2,'-',año_finalp2,' respecto al período ',
+                     año_iniciop1,'-',año_finalp1,' en ',
+                     substr(archivo, 1, nchar(archivo) - 15),'.')
+    
+    mytabl <- tabla |> gt() |>
+      tab_header(title = md(paste0('**', titulo, '**'))) |>
+      fmt_number(columns = 1:12,decimals = 1) |>
+      cols_add(P = seq(5,95,5),.before = 'Ene') |>
+      tab_style(style = list(cell_text(weight = 'bold')),locations = cells_column_labels()) |>
+      tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1)) |>
+      cols_width(c(2:13) ~ px(50)) |>
+      cols_width(P ~ px(30)) |>
+      data_color(columns = 2:13,method = 'numeric',palette = c("#3333ff","#ffffff","#cc0000"),domain = c(-7,7))
+    
+  } #DEL ELSE
+  
+  return(mytabl)
+}
+
+valores_normales <- function(archivo, periodo) {
+  
+  año_inicio <- switch(periodo,1911,1921,1931,1941,1951,1961,1971,1981,1991)
+  año_final <- switch(periodo,1940,1950,1960,1970,1980,1990,2000,2010,2020)
+  
+  datos <- obtenerDatos(archivo)
+  
+  subdatos <- subset(datos, (A >= año_inicio) & (A <= año_final))
+  
+  cantidad_total_dias_teorica <- c(930,848,930,900,930,900,930,930,900,930,900,930)
+  #(La cantidad teórica en febrero varía entre 847 y 848, desprecio esta variación)
+  
+  if (NROW(subdatos) == 0) {
+    tabla <- data.frame("SD"= c("Sin datos para este período."))
+    mytabl <- gt(data = tabla)
+  } else {
+    cantidad_total_dias_efectiva <- aggregate(subdatos, by=list(subdatos$M), function(x) sum(!is.na(x)) )
+    porcentaje_efectivo_Tmin <- (cantidad_total_dias_efectiva$Tmin/cantidad_total_dias_teorica)*100
+    porcentaje_efectivo_Tmax <- (cantidad_total_dias_efectiva$Tmax/cantidad_total_dias_teorica)*100
+    
+    ValoresMedios <- aggregate(subdatos, by=list(subdatos$M), function(x) mean(x, na.rm= TRUE) )
+    
+    tabla <- data.frame("Mes"= c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"),
+                        "Tnm"= round(ValoresMedios$Tmin, digits = 1),
+                        "Txm"= round(ValoresMedios$Tmax, digits = 1))
+    
+    for (mes in 1:12) {
+      if (porcentaje_efectivo_Tmin[mes] < 85) {tabla[mes,2] <- NA}
+      if (porcentaje_efectivo_Tmax[mes] < 85) {tabla[mes,3] <- NA}
+    }
+    
+    tnn <- tapply(subdatos$Tmin, list(subdatos$A, subdatos$M), function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, min(x, na.rm=T), NA ) } )
+    
+    if (length(tnn[,1]) != 30) {
+      
+      tabla$Tnn <- tabla$Txn <- tabla$Tnx <- tabla$Txx <- tabla$DSn <- tabla$DSx <- rep(NA,12)
+      
+    } else {
+      
+      tabla$Tnn <- apply(tnn,2, function(x) { ifelse(sum(is.na(x)) <= 4, round(mean(x, na.rm=T),1),NA) } )
+      
+      txn <- tapply(subdatos$Tmax, list(subdatos$A, subdatos$M), function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, min(x, na.rm=T), NA ) } )
+      tabla$Txn <- apply(txn,2, function(x) { ifelse(sum(is.na(x)) <= 4, round(mean(x, na.rm=T),1),NA) } )
+      
+      tnx <- tapply(subdatos$Tmin, list(subdatos$A, subdatos$M), function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, max(x, na.rm=T), NA ) } )
+      tabla$Tnx <- apply(tnx,2, function(x) { ifelse(sum(is.na(x)) <= 4, round(mean(x, na.rm=T),1),NA) } )
+      
+      txx <- tapply(subdatos$Tmax, list(subdatos$A, subdatos$M), function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, max(x, na.rm=T), NA ) } )
+      tabla$Txx <- apply(txx,2, function(x) { ifelse(sum(is.na(x)) <= 4, round(mean(x, na.rm=T),1),NA) } )
+      
+      dsn <- tapply(subdatos$Tmin, list(subdatos$A, subdatos$M), function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, sd(x, na.rm=T), NA ) } )
+      tabla$DSn <- apply(dsn,2, function(x) { ifelse(sum(is.na(x)) <= 4, round(mean(x, na.rm=T),1),NA) } )
+      
+      dsx <- tapply(subdatos$Tmax, list(subdatos$A, subdatos$M), function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, sd(x, na.rm=T), NA ) } )
+      tabla$DSx <- apply(dsx,2, function(x) { ifelse(sum(is.na(x)) <= 4, round(mean(x, na.rm=T),1),NA) } )
+      
+    }
+    
+    titulo <- paste0('Valores normales de la estación ',obtenerNombreBreve(archivo),
+                     ', período ',año_inicio,'-',año_final,'.')
+    
+    mytabl <- tabla |> gt() |>
+      tab_header(title = md(paste0('**', titulo, '**'))) |>
+      fmt_number(columns = 2:9,decimals = 1) |>
+      tab_style(style = list(cell_text(weight = 'bold')),locations = cells_column_labels()) |>
+      tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1)) |>
+      cols_width(c(2:9) ~ px(50))
+    
+  } #Llave del else
+  
+  return(list("mytabl"=mytabl,
+              "tabla"= tabla) )
+  
+}
+
+amplitudTermicaMensual <- function(archivo, opcion = 'media') {
+  
+  if (opcion == 'media') {
+    
+    datos <- obtenerDatos(archivo)
+    
+    datos$amplitud <- datos$Tmax - datos$Tmin
+    
+    tabla <- tapply(datos$amplitud, list(datos$A, datos$M),
+                    function(x) { ifelse( (sum(is.na(x)) / length(x)) <0.15, round(mean(x, na.rm=T),1), NA ) } )
+    
+    colnames(tabla) <- c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+    
+    titulo <- paste0('Amplitud térmica media mensual en ',substr(archivo, 1, nchar(archivo) - 4),'.')
+    
+    mytabl <- obtener_mytable(as.data.frame(tabla), titulo,
+                              colores = c("#008000","#ffffff","#cc0000"), dominio = c(0,25),
+                              interactivo=TRUE)
+    
+    return(list("mytabl"= mytabl,
+                "tabla"= tabla) )
+    
+  } else if (opcion == 'absoluta') {
+    
+    minimas_absolutas <- tabla_mensual(archivo, 'tnn')$tabla
+    maximas_absolutas <- tabla_mensual(archivo, 'txx')$tabla
+    
+    amplitud_absoluta <- maximas_absolutas - minimas_absolutas
+    
+    titulo <- paste0('Amplitud térmica absoluta en ',substr(archivo, 1, nchar(archivo) - 4),'.')
+    
+    mytabl <- obtener_mytable(as.data.frame(amplitud_absoluta), titulo,
+                              colores = c("#008000","#ffffff","#cc0000"), dominio = c(5,50),
+                              interactivo=TRUE)
+    
+    return(list("mytabl"= mytabl,
+                "tabla"= amplitud_absoluta) )
+    
+  }
+  
+}
+
+top_five <- function(archivo, variable, orden) {
+  
+  datos <- tabla_mensual(archivo, variable)$tabla
+  
+  datos_lista <- datos %>%
+    mutate('Anio' = rownames(datos)) %>%
+    pivot_longer(cols = !Anio, names_to = 'Mes', values_to = 'Temp')
+  
+  ifelse(orden == 'descendente',
+         datos_ranking <- datos_lista %>%
+           group_by(Mes) %>%
+           arrange(desc(Temp), .by_group = TRUE) %>%
+           mutate(Puesto = dense_rank( desc(Temp) )) %>%
+           filter(Puesto  <= 5) %>%
+           select(-Puesto) %>%
+           group_by(Mes,Temp) %>%
+           summarise('Año(s)' = paste0(Anio, collapse = ', ')) %>%
+           group_by(Mes) %>%
+           arrange(desc(Temp)) %>%
+           mutate(Posicion = row_number()) %>%
+           ungroup() %>%
+           select(Mes, Posicion, Temp, `Año(s)`) %>%
+           rename('Temperatura (°C)' = Temp),
+         
+         datos_ranking <- datos_lista %>%
+           group_by(Mes) %>%
+           arrange(Temp, .by_group = TRUE) %>%
+           mutate(Puesto = dense_rank( Temp )) %>%
+           filter(Puesto  <= 5) %>%
+           select(-Puesto) %>%
+           group_by(Mes,Temp) %>%
+           summarise('Año(s)' = paste0(Anio, collapse = ', ')) %>%
+           group_by(Mes) %>%
+           arrange(Temp) %>%
+           mutate(Posicion = row_number()) %>%
+           ungroup() %>%
+           select(Mes, Posicion, Temp, `Año(s)`) %>%
+           rename('Temperatura (°C)' = Temp)
+         )
+  
+  meses_ordenados <- c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+  
+  tabla_final <- datos_ranking %>%
+    mutate(Mes = factor(Mes, levels = meses_ordenados)) %>%
+    arrange(Mes, Posicion)
+  
+  return(as.data.frame(tabla_final))
+  
+}
+
+#-------------------------------------------------------------------------------
+#-------------------FUNCIONES ESCALA QUINCENAL----------------------------------
+#-------------------------------------------------------------------------------
+
+medias_quincenales <- function(archivo, variable, quincena) {
+  datos <- obtenerDatos(archivo)
+  
+  if (quincena == "primera") {
+    datos_quincenales <- subset(datos, D<16 & !(M == 2 & D == 15))
+  } else if (quincena == "segunda") {
+    datos_quincenales <- subset(datos, D>14 & !(M != 2 & D == 15))
+  }
+  
+  tabla <- tapply(datos_quincenales[[variable]], list(datos_quincenales$A,datos_quincenales$M), mean)
+  
+  colnames(tabla) <- c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+  
+  nombre_parametro <- switch(variable,"Tmin"="Temperatura mínima media", "Tmax"="Temperatura máxima media")
+  
+  titulo <- paste0(nombre_parametro,' ', quincena, ' quincena', ' en ',substr(archivo, 1, nchar(archivo) - 4),'.')
+  
+  mytabl <- obtener_mytable(as.data.frame(tabla), titulo,
+                           colores = c("#8000ff","#62be7a","#ffeb84","#f8696b"), dominio = c(-40,50),
+                           interactivo=TRUE)
+  
+  return(list("mytabl"=mytabl,
+              "tabla"=tabla) )
+}
+
+records_quincenales <- function(archivo, anio, quinc) {
+  
+  datos <- obtenerDatos(archivo)
+  datos$Fecha <- as.Date(paste0(datos$A, "-", datos$M, "-", datos$D), format = "%Y-%m-%d")
+  
+  primer_anio <- datos[2, 1]
+  ultimo_anio <- datos[nrow(datos), 1]
+  
+  datos <- datos %>%
+    filter(A >= anio)
+  
+  if (quinc == 1) {
+    datos <- datos %>% filter(if_else(M == 2, D <= 14, D <= 15))
+  } else if (quinc == 2) {
+    datos <- datos %>% filter(if_else(M == 2, D >= 15, D >= 16))
+  }
+  
+  # Inicializar listas para almacenar resultados
+  records_minimos <- aggregate(cbind(Tmin, Tmax) ~ M, data = datos, FUN = min, na.rm = TRUE)
+  records_maximos <- aggregate(cbind(Tmin, Tmax) ~ M, data = datos, FUN = max, na.rm = TRUE)
+  
+  fechas_tnn <- character(12)
+  fechas_txn <- character(12)
+  fechas_tnx <- character(12)
+  fechas_txx <- character(12)
+  
+  for (mes in 1:12) {
+    subdatos <- subset(datos, M == mes)
+    
+    # Manejar casos donde no hay datos para el mes
+    if (nrow(subdatos) == 0) {
+      fechas_tnn[mes] <- NA
+      fechas_txn[mes] <- NA
+      fechas_tnx[mes] <- NA
+      fechas_txx[mes] <- NA
+      next
+    }
+    
+    # Tnn: Fecha del mínimo de Tmin
+    posicion_fecha_tnn <- which(subdatos$Tmin == records_minimos$Tmin[records_minimos$M == mes])
+    fechas_tnn[mes] <- if (length(posicion_fecha_tnn) > 0) {
+      paste(subdatos$Fecha[posicion_fecha_tnn], collapse = "\n")
+    } else {
+      NA
+    }
+    
+    # Txn: Fecha del mínimo de Tmax
+    posicion_fecha_txn <- which(subdatos$Tmax == records_minimos$Tmax[records_minimos$M == mes])
+    fechas_txn[mes] <- if (length(posicion_fecha_txn) > 0) {
+      paste(subdatos$Fecha[posicion_fecha_txn], collapse = "\n")
+    } else {
+      NA
+    }
+    
+    # Tnx: Fecha del máximo de Tmin
+    posicion_fecha_tnx <- which(subdatos$Tmin == records_maximos$Tmin[records_maximos$M == mes])
+    fechas_tnx[mes] <- if (length(posicion_fecha_tnx) > 0) {
+      paste(subdatos$Fecha[posicion_fecha_tnx], collapse = "\n")
+    } else {
+      NA
+    }
+    
+    # Txx: Fecha del máximo de Tmax
+    posicion_fecha_txx <- which(subdatos$Tmax == records_maximos$Tmax[records_maximos$M == mes])
+    fechas_txx[mes] <- if (length(posicion_fecha_txx) > 0) {
+      paste(subdatos$Fecha[posicion_fecha_txx], collapse = "\n")
+    } else {
+      NA
+    }
+  }
+  
+  # Crear el data.frame asegurando 12 filas
+  tabla <- data.frame(
+    Mes = c("Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"),
+    Tnn = records_minimos$Tmin[match(1:12, records_minimos$M)],
+    Fecha_Tnn = fechas_tnn,
+    Tnx = records_maximos$Tmin[match(1:12, records_maximos$M)],
+    Fecha_Tnx = fechas_tnx,
+    Txn = records_minimos$Tmax[match(1:12, records_minimos$M)],
+    Fecha_Txn = fechas_txn,
+    Txx = records_maximos$Tmax[match(1:12, records_maximos$M)],
+    Fecha_Txx = fechas_txx
+  )
+  
+  # Reemplazar posibles NA en valores numéricos
+  tabla$Tnn[is.na(tabla$Tnn)] <- NA
+  tabla$Tnx[is.na(tabla$Tnx)] <- NA
+  tabla$Txn[is.na(tabla$Txn)] <- NA
+  tabla$Txx[is.na(tabla$Txx)] <- NA
+  
+  titulo <- paste0('Récords en ', sub(pattern = "\\s*\\(.*" ,replacement = "" ,x = archivo),' ',
+                   ifelse(anio<primer_anio,primer_anio,anio),'-',ultimo_anio, ' ',
+                   ifelse(quinc == 1, '[1ra','[2da'), ' quincena]')
+  
+  mytabl <- tabla |> gt() |>
+    tab_header(title = md(paste0("**", titulo, "**"))) |>
+    fmt_number(columns = c(2, 4, 6, 8), decimals = 1) |>
+    tab_style(style = cell_text(weight = "bold"), locations = cells_column_labels()) |>
+    tab_style(style = cell_text(weight = "bold"), locations = cells_body(columns = 1)) |>
+    cols_width(c(3, 5, 7, 9) ~ px(95)) |>
+    data_color(
+      columns = c(2, 4, 6, 8),
+      method = "numeric",
+      palette = c("#8000ff", "#62be7a", "#ffeb84", "#f8696b"),
+      domain = c(-40, 50)
+    )
+  
+  return(mytabl)
+}
+
+#-------------------------------------------------------------------------------
+#-------------------FUNCIONES ESCALA ESTACIONAL---------------------------------
+#-------------------------------------------------------------------------------
+
+medias_estacionales <- function(archivo, variable) {
+  
+  datos <- obtenerDatos(archivo)
+  
+  datos_modif <- datos %>% mutate(V = ifelse(M==12,A+1,A)) #Hago esto para computar bien las medias del verano
+  #No más de 15% de datos faltantes
+  medias_verano <- datos_modif %>% filter(M %in% c(12,1,2)) %>% group_by(V) %>% 
+    summarise(mean_values= if_else( n() >= 90 & sum(is.na( eval(parse(text=variable)) )) < 90*0.15 , mean( eval(parse(text = variable)) , na.rm=T ) , NA ) )
+  
+  medias_otoño <- datos_modif %>% filter(M %in% c(3,4,5)) %>% group_by(A) %>%
+    summarise(mean_values= if_else( n() == 92 & sum(is.na( eval(parse(text=variable)) )) < 92*0.15 , mean( eval(parse(text = variable)) , na.rm=T ) , NA ) )
+  
+  medias_invierno <- datos_modif %>% filter(M %in% c(6,7,8)) %>% group_by(A) %>% 
+    summarise(mean_values= if_else( n() == 92 & sum(is.na( eval(parse(text=variable)) )) < 92*0.15 , mean( eval(parse(text = variable)) , na.rm=T ) , NA ) )
+  
+  medias_primavera <- datos_modif %>% filter(M %in% c(9,10,11)) %>% group_by(A) %>% 
+    summarise(mean_values= if_else( n() == 91 & sum(is.na( eval(parse(text=variable)) )) < 91*0.15 , mean( eval(parse(text = variable)) , na.rm=T ) , NA ) )
+
+  tabla_final <- medias_verano %>% full_join(medias_otoño,by = c('V' = 'A')) %>% 
+    full_join(medias_invierno, by = c('V' = 'A')) %>% full_join(medias_primavera, by = c('V' = 'A'))
+  
+  tabla <- as.data.frame(tabla_final)
+  rownames(tabla) <- tabla[,1]
+  tabla[,1:4] <- round(tabla[,1:4],1)
+  tabla[,1] <- NULL
+  colnames(tabla) <- c('Ver','Oto','Inv','Pri')
+  
+  nombre_parametro <- switch(variable,"Tmin"="Temperatura mínima media", "Tmax"="Temperatura máxima media")
+  
+  titulo <- paste0(nombre_parametro,' ', ' estacional', ' en ',substr(archivo, 1, nchar(archivo) - 4),'.')
+  
+  mytabl <- tabla |> gt() |>
+    tab_header(title = md(paste0('**', titulo, '**'))) |>
+    cols_add(Año = rownames(tabla),.before = 'Ver') |>
+    fmt_number(columns = 2:5,decimals = 1) |>
+    tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1)) |>
+    cols_width(c(2:5) ~ px(63)) |>
+    cols_width(Año ~ px(54)) |>
+    data_color(columns = c(2:5),method = 'numeric', palette = c("#8000ff","#62be7a","#ffeb84","#f8696b"), domain = c(-40,50)) |>
+    tab_options(container.width = px(306)) |>
+    opt_interactive(use_pagination = F,use_search = F)
+  
+  return(list("mytabl"=mytabl,
+              "tabla"=tabla) )
+}
+
+#-------------------------------------------------------------------------------
+#-------------------FUNCIONES ESCALA ANUAL--------------------------------------
+#-------------------------------------------------------------------------------
+
+tablaAnual <- function(archivo,anio){
+  
+  datos <- obtenerDatos(archivo)
+  subdatos <- subset(datos, A==anio)
+  
+  #CAMBIAR ESTO AL FINALIZAR EL AÑO 2025!!
+  if (anio == 2025) {
+    fechas_completas <- tidyr::expand_grid(
+      fecha = seq(as.Date('2025-01-01'), as.Date('2025-12-31'), by = 'day') ) %>%
+      mutate(A = year(fecha), M = month(fecha), D = day(fecha)) %>%
+      select(A,M,D) %>%
+      mutate_all(as.integer)
+    
+    subdatos <- fechas_completas %>%
+      left_join(subdatos, by = c('A','M','D'))
+  }
+  
+  if (NROW(subdatos) == 0) {
+    tabla <- data.frame("SD"= c("Sin datos para este año."))
+    mytabl <- gt(data = tabla)
+  } else {
+    
+    dividido <- split(subdatos[c('D','Tmin','Tmax')], subdatos$M)
+    tablaFinal <- as.data.frame(dividido[[1]])
+    for (i in 2:12) {
+      df_a_agregar <- as.data.frame(dividido[[i]])
+      tablaFinal <- merge(tablaFinal, df_a_agregar, by= 'D', all = T) }
+    row.names(tablaFinal) <- tablaFinal[,1]
+    colnames(tablaFinal) <- c('Dia',letters[1:24])
+    
+    titulo <- paste0('Datos para ',obtenerNombreBreve(archivo), ', año ',anio)
+    
+    mytabl <- tablaFinal |> gt() |>
+      tab_header(title = md(paste0('**', titulo , '**'))) |>
+      tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1)) |>
+      data_color(columns = c(2:25),method = 'numeric', palette = c("#8000ff","#62be7a","#ffeb84","#f8696b"), domain = c(-40,50))
+    
+    meses <- c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+    
+    for (i in 1:12) {
+      
+      inic <- i*2 ; fin <- (i*2)+1
+      
+      mytabl <- mytabl |>
+        tab_spanner(label = meses[i], columns = inic:fin)
+      
+      mytabl <- mytabl |>
+        cols_label( !!letters[((i*2)-1)] := 'Tmin', !!letters[(i*2)] := 'Tmax')
+    }
+    
+  } #ELSE
+  
+  return(mytabl)
+}
+
+valoresMediosAnuales <- function(archivo) {
+  datos <- obtenerDatos(archivo)
+  
+  tablaProv <- aggregate(x = datos, by=list(datos$A,datos$M), mediaMensualNA)
+  tabla <- aggregate(x= tablaProv, by=list(tablaProv$A), mean)
+  tabla_final <- data.frame("Año"=tabla$A, "Tmax"= tabla$Tmax, "Tmin"=tabla$Tmin)
+  tabla_final[tabla_final$Año==2025,2:3] <- NA #CAMBIAR CUANTO TERMINE EL AÑO
+  
+  titulo <- paste0('Medias anuales en ',substr(archivo, 1, nchar(archivo) - 4),'.')
+  
+  mytabl <- tabla_final |> gt() |>
+    tab_header(title = md(paste0('**', titulo, '**'))) |>
+    fmt_number(columns = 2:3,decimals = 1) |>
+    tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1)) |>
+    cols_width(c(2:3) ~ px(67)) |>
+    cols_width(Año ~ px(55)) |>
+    data_color(columns = 2:3,method = 'numeric',palette = c("#8000ff","#62be7a","#ffeb84","#f8696b"),domain = c(-40,50)) |>
+    tab_options(container.width = px(189)) |>
+    opt_interactive(use_pagination = F,use_search = F)
+  
+  return(list("mytabl"=mytabl,
+              "tabla"=tabla_final) )
+}
+
+graficar_medias_anuales <- function(archivo) {
+  
+  datos <- obtenerDatos(archivo)
+  tablaProv <- aggregate(x = datos, by=list(datos$A,datos$M), mediaMensualNA)
+  tabla <- aggregate(x= tablaProv, by=list(tablaProv$A), mean)
+  tabla_final <- data.frame("A"=tabla$A, "Tmax"= tabla$Tmax, "Tmin"=tabla$Tmin)
+  
+  grafico_minimas <- ggplot(data = tabla_final)
+  grafico_minimas <- grafico_minimas + geom_line(mapping = aes(x=A,y=Tmin))
+  grafico_minimas <- grafico_minimas + labs(y= "Temperatura (°C)",
+                                            title = paste0("Temperatura mínima media anual en ",substrRight(archivo)))
+  
+  grafico_maximas <- ggplot(data = tabla_final)
+  grafico_maximas <- grafico_maximas + geom_line(mapping = aes(x=A,y=Tmax))
+  grafico_maximas <- grafico_maximas + labs(y= "Temperatura (°C)",
+                                            title = paste0("Temperatura máxima media anual en ",substrRight(archivo)))
+  
+  grafico_final <- ggpubr::ggarrange(grafico_minimas, grafico_maximas, ncol = 1,nrow = 2)
+  
+  return(grafico_final)
+}
+
+#-------------------------------------------------------------------------------
+#-------------------FUNCIONES SERIE COMPLETA------------------------------------
+#-------------------------------------------------------------------------------
+
+umbralesTodoRegistro <- function(archivo, comparacion, umbral) {
+  datos <- obtenerDatos(archivo)
+  
+  if (comparacion == "Tmin <=") {
+    tabla <- subset(datos, Tmin <= umbral)
+  } else if (comparacion == "Tmin >=") {
+    tabla <- subset(datos, Tmin >= umbral)
+  } else if (comparacion == "Tmax <=") {
+    tabla <- subset(datos, Tmax <= umbral)
+  } else if (comparacion == "Tmax >=") {
+    tabla <- subset(datos, Tmax >= umbral)
+  }
+  
+  titulo <- paste0('Dias con ',comparacion,umbral,'°C en ',substr(archivo, 1, nchar(archivo) - 4),'.')
+  
+  mytabl <- as.data.frame(tabla) |> gt() |>
+    tab_header(title = md(paste0('**', titulo , '**'))) |>
+    fmt_number(columns = 4:5,decimals = 1) |>
+    cols_width(everything() ~ px(67)) |>
+    tab_options(container.width = px(67*5)) |>
+    opt_interactive(use_pagination = F,use_search = F)
+  
+  return(list('mytable'= mytabl,
+              'tabla' = tabla ) )
+}
+
+rachas <- function(archivo, variable, comparacion, umbral, duracion_minima) {
+  
+  datos <- obtenerDatos(archivo)
+  datos$Fecha <- as.Date(paste0(datos$A,'-',datos$M,'-',datos$D), format = '%Y-%m-%d')
+  
+  subdatos <- datos[,c('Fecha',variable)]
+  
+  if (comparacion == '>=') {
+    datos$cumple_umbral <- subdatos[,2] >= umbral
+  } else if (comparacion == '<=') {
+    datos$cumple_umbral <- subdatos[,2] <= umbral
+  }
+  
+  tabla <- rle(datos$cumple_umbral)
+  
+  tablaDF <- data.frame('Extension' = tabla$lengths, 'valor' = tabla$values,
+                        'start' = cumsum(c(1, tabla$lengths[-length(tabla$lengths)] )),
+                        'end' = cumsum(tabla$lengths) )
+  
+  tablaDF$Fecha_inicial <- datos$Fecha[tablaDF$start]
+  tablaDF$Fecha_final <- datos$Fecha[tablaDF$end]
+  
+  tabla_final <- subset(tablaDF, (valor == TRUE) & (Extension >= duracion_minima) )
+  tabla_final <- tabla_final[order(tabla_final$Extension,decreasing = T),]
+  tabla_final <- tabla_final[,c(1,5,6)]
+  
+  return(tabla_final)
+  
+}
+
+#-------------------------------------------------------------------------------
+#-------------------GRÁFICOS----------------------------------------------------
+#-------------------------------------------------------------------------------
+
+graf_serie_temporal <- function(archivo, mes, variable, estadistica) {
+  
+  if (variable == 'Tmin') {
+    DF_datos <- case_when(estadistica == 'media' ~ tabla_mensual(archivo,'tnm')$tabla,
+                          estadistica == 'baja' ~ tabla_mensual(archivo,'tnn')$tabla,
+                          estadistica == 'alta' ~ tabla_mensual(archivo,'tnx')$tabla,
+                          estadistica == 'desvioest' ~ desvioEstandarMensual(archivo,'Tmin')$tabla,
+                          estadistica == 'mediana' ~ medianaMensualTabla(archivo,'Tmin')$tabla)
+  } else if (variable == 'Tmax') {
+    DF_datos <- case_when(estadistica == 'media' ~ tabla_mensual(archivo,'txm')$tabla,
+                          estadistica == 'baja' ~ tabla_mensual(archivo,'txn')$tabla,
+                          estadistica == 'alta' ~ tabla_mensual(archivo,'txx')$tabla,
+                          estadistica == 'desvioest' ~ desvioEstandarMensual(archivo,'Tmax')$tabla,
+                          estadistica == 'mediana' ~ medianaMensualTabla(archivo,'Tmax')$tabla)
+  }
+  
+  DF_datos <- DF_datos %>%
+    select(mes) %>%
+    mutate(anios = as.integer(rownames(DF_datos))) %>%
+    rename(Temp = 1)
+  
+  #Gráfico
+  nombre_parametro <- paste0(ifelse(estadistica == 'desvioest','Desvío estándar de la temperatura ','Temperatura '),
+                             ifelse(variable == 'Tmin','mínima ','máxima '),
+                             case_when(estadistica == 'media' ~ 'media',
+                                       estadistica == 'baja' ~ 'más baja',
+                                       estadistica == 'alta' ~ 'más alta',
+                                       estadistica == 'desvioest' ~ '',
+                                       estadistica == 'mediana' ~ 'mediana')
+                             )
+  
+  nombre_mes <- switch(mes,"enero", "febrero", "marzo", "abril", "mayo", "junio",
+                       "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+  titulo <- paste0(nombre_parametro, " - ",substrRight(archivo), " - ", nombre_mes, ".")
+  
+  set_blanket()
+  f <- gg_line(data = DF_datos, x = anios, y = Temp,
+               title = titulo, subtitle = 'Suavisado LOESS',
+               linewidth = 1,
+               y_label = 'Temperatura (°C)', x_label = 'Año') +
+    #Elimino las comas de los millares del eje X
+    scale_x_continuous(breaks = seq( floor(min(DF_datos$anios, na.rm = TRUE)/10) * 10 ,
+                                     ceiling(max(DF_datos$anios, na.rm = TRUE)/10) * 10,
+                                     by= 10) ) +
+    geom_smooth(se = FALSE,colour = 'red',linetype = 'dashed',linewidth = 1)
+  
+  return(f)
+}
+
+grafico_media_movil <- function(archivo, ventana = 31, variable, anio_target) {
+  
+  #No más de 3 NA para calcular la media móvil, en un futuro quizás lo cambie a porcentaje
+  mov_avg <- function(x, n = ventana, max_na = 3) {
+    zoo::rollapply(x, width = n, function (w) {
+      ifelse(sum(is.na(w)) <= max_na, mean(w, na.rm = TRUE), NA ) },
+      fill = NA, align = 'center') } #La media móvil es centrada
+  
+  datos <- obtenerDatos(archivo)
+  
+  tablaFinal <- datos %>%
+    select(A,M,D,!!variable) %>%
+    filter(A >= 1960) %>% #Análisis a partir del año 1961 (necesito los de diciembre de 1960)
+    mutate(media_movil = round(mov_avg( x = !!rlang::sym(variable) ),1)) %>%
+    filter(!(M == 2 & D == 29)) %>% #Elimino los 29-feb
+    mutate(dia_del_anio = yday(ymd(paste(A,M,D,sep = '-'))) )
+  
+  #Gráfico
+  titulo <- paste0('Temperatura ',ifelse(variable == 'Tmin','mínima','máxima'),
+                   ' media móvil - ', obtenerNombreBreve(archivo),
+                   ' (',ifelse(min(tablaFinal$A) == 1960, 1961, min(tablaFinal$A)),
+                   '-2025).')
+  
+  set_blanket()
+  f <- gg_line(data = tablaFinal,
+               x = dia_del_anio, y = media_movil,
+               group = A, colour= 'black') +
+    gghighlight::gghighlight(A == anio_target,
+                             line_label_type = "sec_axis") + 
+    labs(title = titulo,
+         y = 'Temp. media móvil (°C)',
+         subtitle = 'Ventana centrada de 31 días.' ) +
+    scale_x_continuous(name = 'Días del año',
+                       breaks = c(1,32,60,91,121,152,182,213,244,274,305,335),
+                       labels = function(x) {
+                         fecha <- as.Date('2025-01-01') + days(x -1)
+                         format(fecha, '%d-%m') },
+                       expand = c(0,0)) +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
+          #Ver si mantengo esto del panel
+          panel.grid.major.x = element_line(color = 'gray80'))
+  
+  return(f)
+
+}
+
+graficoHeatmap <- function(archivo, mes, variable) {
+  datos <- obtenerDatos(archivo)
+  
+  subdatos <- subset(datos, M == mes)
+  
+  if (variable == "Tmin") {
+    graf <- ggplot(data = subdatos, aes(A,D,fill=Tmin) )
+    valor_minimo <- min(datos$Tmin, na.rm = TRUE)
+    valor_máximo <- max(datos$Tmin, na.rm = TRUE)
+  } else if (variable == "Tmax") {
+    graf <- ggplot(data = subdatos, aes(A,D,fill=Tmax) )
+    valor_minimo <- min(datos$Tmax, na.rm = TRUE)
+    valor_máximo <- max(datos$Tmax, na.rm = TRUE)
+  }
+  
+  graf <- graf + geom_tile(color='white')
+  graf <- graf + coord_fixed()
+  graf <- graf + scale_x_continuous(breaks = seq(min(subdatos$A), max(subdatos$A),5),
+                                    expand = c(0,0))
+  graf <- graf + scale_y_continuous(breaks = seq(1, 31,1),
+                                    expand = c(0,0))
+  graf <- graf + scale_fill_gradientn(colours = c("#8000ff","#62be7a","#ffeb84","#f8696b"),
+                                      limits = c(valor_minimo, valor_máximo),
+                                      na.value = 'white')
+  
+  graf <- graf + guides(fill = guide_colourbar(title = "Temperatura (°C)",
+                                               barwidth = 15,title.vjust = 1) )
+  graf <- graf + theme(legend.position="bottom",
+                       legend.direction = 'horizontal')
+  
+  nombre_parametro <- switch(variable,"Tmin"="Temperatura mínima",
+                             "Tmax"="Temperatura máxima")
+  nombre_mes <- switch(mes,"enero", "febrero", "marzo", "abril", "mayo", "junio",
+                       "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+  titulo <- paste0(nombre_parametro, " para la estación ",substrRight(archivo), ", mes de ", nombre_mes, ".")
+  graf <- graf + labs(x= "Año", y= "Dia", title = titulo)
+  
+  return(graf)
+}
+
+grafBoxplots <- function(archivo, variable, anio) {
+  
+  datos <- switch(variable,
+                  'Tmin' = tabla_mensual(archivo, 'tnm')$tabla,
+                  'Tmax' = tabla_mensual(archivo, 'txm')$tabla)
+  
+  box <- datos %>% filter(rownames(datos) >= 1981 & rownames(datos) <= 2020)
+
+  dat <- datos %>% filter(rownames(datos) == anio)
+  dat <- as.vector(unlist(dat))
+  
+  all_values <- c(unlist(box), dat)  # Combina valores de boxplots y curva
+  ylim_dynamic <- extendrange(all_values, f = 0.1) # Añade un 10% de margen
+  
+  boxplot(box,
+          main = paste0("Temperatura ",
+                        ifelse(variable == 'Tmin', 'mínima media en ', 'máxima media en '),
+                        obtenerNombreBreve(archivo)),
+          sub = paste0('Curva correspondiente al año ',anio),
+          ylab = 'Temperatura (°C)',
+          outline=FALSE,
+          ylim = ylim_dynamic)
+  lines(1:12,y = dat,type='b',col = 'red',lwd=2)
+}
+
+box_movil <- function(archivo, variable, n_period, lim = 0.9) {
+  
+  datos <- obtenerDatos(archivo)
+  datos <- datos[,c('A','M','D',variable)]
+  
+  anios_unicos <- sort(unique(datos$A))
+  anios_unicos <- anios_unicos[anios_unicos >= 1961] #Solo datos del período 1961-2024
+  anios_unicos <- anios_unicos[anios_unicos <= 2024]
+  
+  periodos <- list()
+  for (inicio in anios_unicos) {
+    fin <- inicio + n_period - 1
+    if (fin <= max(anios_unicos)) {
+      periodo_datos <- datos %>%
+        filter(A >= inicio & A <= fin)
+      
+      obs_completas <- sum(!is.na(periodo_datos[,c(variable)]))
+      prop_completas <- obs_completas / nrow(periodo_datos)
+      
+      if (prop_completas >= lim) {
+        periodo_datos <- periodo_datos %>%
+          mutate(periodo = paste0(inicio,'-',fin))
+        periodos[[length(periodos) + 1]] <- periodo_datos
+      } else {
+        periodo_datos <- periodo_datos %>%
+          mutate(periodo = paste0(inicio,'-',fin))
+        datos[,c(variable)] <- NA
+        periodos[[length(periodos) + 1]] <- periodo_datos
+      }
+    }
+  }
+  df_periodos <- bind_rows(periodos)
+  colnames(df_periodos) <- c('A','M','D','Temp','Periodo')
+  
+  graf <- ggplot(df_periodos, aes(x = Periodo, y = Temp)) +
+    stat_boxplot(geom = 'errorbar') +
+    geom_boxplot() +
+    labs(y = 'Temperatura (°C)',
+         title = paste0('Temperatura ',
+                        ifelse(variable == 'Tmin','mínima','máxima'),
+                        ' en ',obtenerNombreBreve(archivo))) +
+    theme(axis.text.x = element_text(angle = 90) )
+  
+  return(graf)
+  
+}
+
+perc_movil <- function(archivo, variable = 'Tmax', n_period = 20, lim = 0.9) {
+  
+  datos <- obtenerDatos(archivo)
+  datos <- datos[,c('A','M','D',variable)]
+  
+  anios_unicos <- sort(unique(datos$A))
+  anios_unicos <- anios_unicos[anios_unicos >= 1961] #Solo datos del período 1961-2024
+  anios_unicos <- anios_unicos[anios_unicos <= 2024]
+  
+  periodos <- list()
+  for (inicio in anios_unicos) {
+    fin <- inicio + n_period - 1
+    if (fin <= max(anios_unicos)) {
+      periodo_datos <- datos %>%
+        filter(A >= inicio & A <= fin)
+      
+      obs_completas <- sum(!is.na(periodo_datos[,c(variable)]))
+      prop_completas <- obs_completas / nrow(periodo_datos)
+      
+      if (prop_completas >= lim) {
+        periodo_datos <- periodo_datos %>%
+          mutate(periodo = paste0(inicio,'-',fin))
+        periodos[[length(periodos) + 1]] <- periodo_datos
+      } else {
+        periodo_datos <- periodo_datos %>%
+          mutate(periodo = paste0(inicio,'-',fin))
+        datos[,c(variable)] <- NA
+        periodos[[length(periodos) + 1]] <- periodo_datos
+      }
+    }
+  }
+  
+  df_percentiles <- lapply(periodos, 
+                           function(x) round(quantile(x[[variable]],
+                                                      probs= seq(0.05,0.95,0.05),
+                                                      na.rm = T),1)  )
+  df_percentiles <- bind_rows(df_percentiles)
+  colnames(df_percentiles) <- seq(5,95,5)
+  df_percentiles$AnioInicio <- min(anios_unicos):(2024 - n_period + 1)
+  
+  df_final <- df_percentiles %>%
+    pivot_longer(cols = -AnioInicio, names_to = 'Percentil', values_to = 'Temp') %>%
+    mutate(Percentil = as.numeric(Percentil),
+           AnioInicio = as.numeric(AnioInicio))
+  
+  set_blanket()
+  f <- gg_line(data = df_final,
+               x = Percentil, y = Temp, group = AnioInicio,
+               y_label = 'Temperatura (°C)', x_label = 'Año inicio', 
+               title = paste0('Evolución de los percentiles de la temperatura ',
+                              ifelse(variable == 'Tmin','mínima','máxima'),
+                              ' en ',obtenerNombreBreve(archivo)),
+               subtitle = paste0('Tomando períodos móviles de ',n_period,' años') ) +
+    geom_point() #+
+    #Elimino las comas de los millares del eje X
+    #scale_x_continuous(breaks = seq(
+    #  floor(min(df_final$AnioInicio, na.rm = TRUE)/10) * 10 ,
+    #  ceiling(max(df_final$AnioInicio, na.rm = TRUE)/10) * 10,
+    #  by= 10) )
+  
+  return(f)
+  
+  #df_periodos <- bind_rows(periodos)
+  #colnames(df_periodos) <- c('A','M','D','Temp','Periodo')
+  
+  # graf <- ggplot(df_periodos, aes(x = Periodo, y = Temp)) +
+  #   stat_boxplot(geom = 'errorbar') +
+  #   geom_boxplot() +
+  #   labs(y = 'Temperatura (°C)',
+  #        title = paste0('Temperatura ',
+  #                       ifelse(variable == 'Tmin','mínima','máxima'),
+  #                       ' en ',obtenerNombreBreve(archivo))) +
+  #   theme(axis.text.x = element_text(angle = 90) )
+  # 
+  # return(graf)
+  
+}
+
+#lim = 0.9 significa que al menos se debe contar con el 90% de los datos en c/ período
+grafComparacionDensidad <- function(archivo, variable, anio1, anio2, extension, lim = 0.9) {
+  
+  #Investigar una manera más 'eficiente' de hacer esto
+  datos <- obtenerDatos(archivo)
+  datos <- datos[,c('A','M','D',variable)]
+  
+  long_periodo1 <- length(seq(as.Date(paste0(anio1,'-01-01')),
+                              as.Date(paste0(anio1 + extension - 1,'-12-31')),
+                              by='day'))
+  
+  datos_periodo1 <- datos %>% filter((A >= anio1) & (A <= anio1 + extension - 1)) %>%
+    mutate(periodo = as.factor(paste0(anio1,'-',anio1 + extension - 1)))
+  
+  if ( sum((!is.na(datos_periodo1[,4])) / long_periodo1) < lim ) {
+    f <- ggplot() + annotate('text', x = 0.5, y = 0.5,
+                             label = 'El período 1 no tiene datos suficientes.') +
+      theme_void()
+    return(f)
+  }
+  
+  long_periodo2 <- length(seq(as.Date(paste0(anio2,'-01-01')),
+                              as.Date(paste0(anio2 + extension - 1,'-12-31')),
+                              by='day'))
+  
+  datos_periodo2 <- datos %>%  filter((A >= anio2) & (A <= anio2 + extension - 1)) %>%
+    mutate(periodo = as.factor(paste0(anio2,'-',anio2 + extension - 1)))
+  
+  if ( sum((!is.na(datos_periodo2[,4])) / long_periodo2) < lim ) {
+    f <- ggplot() + annotate('text', x = 0.5, y = 0.5,
+                             label = 'El período 2 no tiene datos suficientes.') +
+      theme_void()
+    return(f)
+  }
+  
+  datos_juntos <- bind_rows(datos_periodo1, datos_periodo2)
+  
+  set_blanket()
+  f <- gg_density(data = datos_juntos, x = !!rlang::sym(variable), col = periodo,
+                  alpha = 0.4, x_label = paste0(variable,' (°C)'), y_label = 'Densidad',
+                  title = paste0(obtenerNombreBreve(archivo))) +
+    theme(plot.title = element_text(hjust = 0.5),
+          legend.position = 'bottom', legend.direction = 'horizontal', legend.title = element_blank())
+  
+  return(f)
+    
+  
+}
+
+grafHistograma <- function(archivo, variable, mes) {
+  datos <- obtenerDatos(archivo)
+  datos <- datos[,c('A','M','D',variable)]
+  subdatos <- subset(datos, M == mes)
+  
+  limite_inferior <- floor(min(subdatos[,4],na.rm = T)/2) * 2
+  limite_superior <- ceiling(max(subdatos[,4],na.rm = T)) * 2
+  
+  frecuencias <- table( cut(datos[,4],breaks = seq(limite_inferior,limite_superior,2), right = FALSE ) )
+  frecuencias <- frecuencias[which(frecuencias != 0)]
+  
+  df <- data.frame(limites = factor(names(frecuencias), levels = names(frecuencias)), valores = as.vector(frecuencias))
+
+  f <- ggplot(df, aes(x= limites, y= valores )) +
+    geom_col(fill = 'steelblue') +
+    labs(title = 'Frecuencias', x = 'Categorias', y = 'Frecuencias') +
+    theme_minimal()
+  f
+}
+
+grafSerieCompleta <- function(archivo) {
+  datos <- obtenerDatos(archivo)
+  datos$Fecha <- as.Date(paste0(datos$A,'-',datos$M,'-',datos$D), format = '%Y-%m-%d')
+  
+  par(mfrow = c(2,1), mai = c(0.4,1,0.4,1))
+  
+  plot(datos$Fecha, datos$Tmin, type = 'l', main = paste0("Temperatura mínima en ",substrRight(archivo)),
+       xlab= 'Fecha', ylab= 'Temperatura (°C)' )
+  plot(datos$Fecha, datos$Tmax, type = 'l', main = paste0("Temperatura máxima en ",substrRight(archivo)),
+       xlab= 'Fecha', ylab= 'Temperatura (°C)' )
+}
+
+#-------------------------------------------------------------------------------
+#-------------------FUNCIONES DEL PANEL ANÁLISIS--------------------------------
+#-------------------------------------------------------------------------------
+
+corrDatosDiarios <- function(archivo1, archivo2, anio_inicio, anio_final){
+  
+  datos_estacion1 <- obtenerDatos(archivo1)
+  datos_estacion1 <- subset(datos_estacion1, (A >= anio_inicio) & (A <= anio_final) )
+  datos_estacion2 <- obtenerDatos(archivo2)
+  datos_estacion2 <- subset(datos_estacion2, (A >= anio_inicio) & (A <= anio_final) )
+  
+  if (length(rownames(datos_estacion1)) == 0 ) {
+    tabla <- data.frame("Datos insuficientes"= c("La estación 1 no cuenta con datos suficientes."))
+    mytabl <- datatable(tabla, rownames = FALSE, options = list (dom = 't' ) )
+    return(mytabl)
+  }
+  
+  if (length(rownames(datos_estacion2)) == 0 ) {
+    tabla <- data.frame("Datos insuficientes"= c("La estación 2 no cuenta con datos suficientes."))
+    mytabl <- datatable(tabla, rownames = FALSE, options = list (dom = 't' ) )
+    return(mytabl)
+  }
+  
+  tablaDatos <- merge(datos_estacion1,datos_estacion2,by = c('A','M','D'))
+  colnames(tablaDatos) <- c('A','M','D','Tmax1','Tmin1','Tmax2','Tmin2')
+  
+  correlacionesMin <- by(tablaDatos[,c('Tmin1','Tmin2')], tablaDatos$M, function(x) cor(x[,1],x[,2], use = "complete.obs") )
+  correlacionesMax <- by(tablaDatos[,c('Tmax1','Tmax2')], tablaDatos$M, function(x) cor(x[,1],x[,2], use = "complete.obs") )
+  nTmin <- by(tablaDatos[,c('Tmin1','Tmin2')], tablaDatos$M, function(x) sum(complete.cases(x[,1],x[,2])) )
+  nTmax <- by(tablaDatos[,c('Tmax1','Tmax2')], tablaDatos$M, function(x) sum(complete.cases(x[,1],x[,2])) )
+
+  resumen <- data.frame('Mes'= 1:12,
+                        'corTmin'= as.numeric(correlacionesMin),
+                        'nTmin' = as.integer(nTmin),
+                        'Máximas'= as.numeric(correlacionesMax),
+                        'nTmax' = as.integer(nTmax) )
+  
+  mytabl <- resumen |> gt() |>
+    fmt_number(columns = c(2,4),decimals = 2) |>
+    tab_style(style = list(cell_text(weight = 'bold')),locations = cells_column_labels()) |>
+    tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1))
+
+  return(mytabl)
+}
+
+tabla_datos_faltantes <- function(archivo, variable) {
+  datos <- obtenerDatos(archivo)
+  
+  tabla <- tapply(datos[[variable]], list(datos$A, datos$M),
+                  function(x) { sum(is.na(x)) } )
+  colnames(tabla) <- c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+  
+  titulo <- paste0('Cantidad de datos faltantes (',variable,'), ',obtenerNombreBreve(archivo),'.')
+  
+  mytabl <- obtener_mytable(as.data.frame(tabla),titulo,colores = c("#ffffff","#cc0000"),dominio = c(0,31) ) |>
+    fmt_number(columns = 2:13,decimals = 0)
+  
+  return(mytabl)
+}
+
+records_amplitud_termica <- function(archivo) {
+  datos <- obtenerDatos(archivo)
+  datos$Amplitud <- datos$Tmax - datos$Tmin
+  datos$Fecha <- as.Date(paste0(datos$A,'-',datos$M,'-',datos$D), format = '%Y-%m-%d')
+  
+  records_minimos <- aggregate(datos,by=list(datos$M), function(x) min(x,na.rm = TRUE))
+  fechas_min <- numeric(0)
+  records_maximos <- aggregate(datos,by=list(datos$M), function(x) max(x,na.rm = TRUE))
+  fechas_max <- numeric(0)
+  
+  for (mes in 1:12) {
+    subdatos <- subset(datos, M == mes)
+    posicion_fecha_min <- which(subdatos$Amplitud == records_minimos$Amplitud[mes])
+    fechas_min[mes] <- as.character(paste(subdatos$Fecha[posicion_fecha_min], collapse = "\n"))
+    
+    posicion_fecha_max <- which(subdatos$Amplitud == records_maximos$Amplitud[mes])
+    fechas_max[mes] <- as.character(paste(subdatos$Fecha[posicion_fecha_max], collapse = "\n"))
+  }
+  
+  tabla <- data.frame("Mes"= c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"),
+                      "Mín"= records_minimos$Amplitud,
+                      "Fecha_Min"= fechas_min,
+                      "Máx"= records_maximos$Amplitud,
+                      "Fecha_Max"= fechas_max)
+  
+  titulo <- paste0('Récords de amplitud térmica diaria en ', substr(archivo,1,nchar(archivo)-4) )
+  
+  mytabl <- tabla|> gt() |>
+    tab_header(title = md(paste0('**', titulo, '**'))) |>
+    fmt_number(columns = c(2,4),decimals = 1) |>
+    tab_style(style = cell_text(weight = 'bold'),locations = cells_column_labels()) |>
+    tab_style(style = cell_text(weight = 'bold'),locations = cells_body(columns = 1)) |>
+    cols_width(c(3,5) ~ px(95)) |>
+    cols_width(c(1,2,4) ~ px(40)) #|>
+    #tab_options(container.width = px(210))
+  
+  return(mytabl)
+}
+
+ranking <- function(dia, mes, anio, variable) {
+  
+  fecha <- as.Date(paste0(anio,'-',mes,'-',dia), "%Y-%m-%d")
+  
+  if (is.na(fecha)) {
+    tabla <- data.frame("SD"= c("Sin datos para esta fecha"))
+    mytabl <- gt(data = tabla)
+    return(mytabl)
+  }
+  
+  nombres_estaciones_abreviado <- obtenerNombreBreve(listado_archivos)
+  
+  ranking_completo <- data.frame(Estacion = 'Estacion', Dato = 'Dato')
+  
+  for (est in 1:length(listado_archivos)) {
+    
+    datos <- obtenerDatos(listado_archivos[est])
+    
+    dato_del_dia <- subset(datos[,variable], datos$A == anio & datos$M == mes & datos$D == dia)
+    
+    if (length(dato_del_dia) == 0) { dato_del_dia <- NA }
+    
+    ranking_completo[est,] <- c(nombres_estaciones_abreviado[est],dato_del_dia)
+    
+  }
+  
+  ranking_completo$Dato <- as.numeric(ranking_completo$Dato)
+  
+  if (variable == 'Tmax') {
+    ranking_completo <- ranking_completo[order(ranking_completo$Dato,decreasing = TRUE),]
+  } else if (variable == 'Tmin') {
+    ranking_completo <- ranking_completo[order(ranking_completo$Dato),]
+  }
+  
+  mytabl <- ranking_completo |> gt() |>
+    fmt_number(columns = 2,decimals = 1) |>
+    tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1)) |>
+    cols_width(c(2) ~ px(67)) |>
+    cols_width(Estacion ~ px(200)) |>
+    data_color(columns = 2,method = 'numeric',palette = c("#8000ff","#62be7a","#ffeb84","#f8696b"),domain = c(-40,50)) |>
+    tab_options(container.width = px(289)) |>
+    opt_interactive(use_pagination = F,use_search = F)
+  
+  return(mytabl)
+}
+
+distribucion <- function(archivo, variable) {
+  
+  datos <- obtenerDatos(archivo)
+  datos <- datos %>%
+    filter(A >= 1991 & A <=2020)
+  
+  datos <- datos[[variable]]
+  
+  n <- sum(!is.na(datos))
+  n_teorico <- length(seq(as.Date('1991-01-01'),as.Date('2020-12-31'),by = 'day'))
+  pctj <- round((n/n_teorico)*100,1)
+  
+  asim <- round(moments::skewness(datos,na.rm = TRUE),2)
+  mediana <- median(datos, na.rm = TRUE)
+  media <- mean(datos, na.rm = TRUE)
+  
+  lineas <- data.frame(
+    valor = c(mediana, media),
+    tipo = c("Mediana", "Media")
+  )
+  
+  set_blanket()
+  f <- gg_density(data = as.data.frame(datos), x = datos, #x = !!rlang::sym(variable), col = periodo,
+                  alpha = 0.4, x_label = paste0(variable,' (°C)'), y_label = 'Density',
+                  title = paste0(obtenerNombreBreve(archivo))) +
+    geom_vline(data = lineas, aes(xintercept = valor, color = tipo), linetype = 'dashed') +
+    scale_color_manual(values = c("Mediana" = "blue", "Media" = "red")) +
+    theme(plot.title = element_text(hjust = 0.5),
+          legend.position = 'bottom', legend.direction = 'horizontal', legend.title = element_blank()) +
+    labs(caption = paste0('Pctj: ',pctj,'; Asim: ',asim,'; mediana: azul; media: rojo'))
+  
+  return(f)
+}
+
+busqueda_inconsistencias <- function(archivo, variable) {
+  
+  datos <- obtenerDatos(archivo)
+  
+  if (variable == 'minima') {
+    
+    #Mínima superior a la máxima del día precedente
+    datos_lagueados_max <- datos %>%
+      mutate(max_ant = lag(Tmax)) %>%
+      mutate(dif = Tmin - max_ant) %>%
+      filter(dif > 0)
+    
+    return(datos_lagueados_max)
+    
+  } else {
+    
+    #Máxima inferior a la mínima del día precedente
+    datos_lagueados_min <- datos %>%
+      mutate(min_ant = lag(Tmin)) %>%
+      mutate(dif = Tmax - min_ant) %>%
+      filter(dif < 0)
+    
+    return(datos_lagueados_min)
+    
+  }
+}
+
+#Se estudia como cambia la correlación entre anomalías de 2 series
+#Comparar correlaciones con el paquete cocor!!
+#http://comparingcorrelations.org/
+evolucion_correl <- function(estacion1, estacion2, variable, n_anios, tipocor) {
+  
+  datos_tabla1 <- anomalias(estacion1,variable,9)$tabla
+  datos_tabla1$Anio <- as.integer(rownames(datos_tabla1))
+  datos1 <- datos_tabla1 %>%
+    pivot_longer(cols = -Anio, names_to = 'Mes', values_to = paste0(variable,1))
+  
+  datos_tabla2 <- anomalias(estacion2,variable,9)$tabla
+  datos_tabla2$Anio <- as.integer(rownames(datos_tabla2))
+  datos2 <- datos_tabla2 %>%
+    pivot_longer(cols = -Anio, names_to = 'Mes', values_to = paste0(variable,2))
+  
+  if(datos1$Anio[1] < datos2$Anio[1]) { 
+    datos_conjuntos <- datos1 %>% right_join(datos2, by = c('Anio','Mes'))
+  } else {
+    datos_conjuntos <- datos1 %>% left_join(datos2, by = c('Anio','Mes'))
+  }
+  
+  seq_anios <- datos_conjuntos$Anio[1]:(2020 - n_anios + 1)
+  
+  serieFinal <- data.frame(Periodo = integer(), correl = numeric(), p_value = numeric(), n = integer())
+  
+  for (anio in seq_anios) {
+    subdatos <- datos_conjuntos %>% filter(between(Anio,anio,anio + n_anios - 1))
+    resultado_cor <- cor.test(x = subdatos[[3]], y = subdatos[[4]], use = "complete.obs", method = tipocor)
+    n <- sum(complete.cases(subdatos[3:4]))
+    serieFinal <- rbind(serieFinal, data.frame('Periodo'= paste0(anio,'-',anio + n_anios - 1),
+                                               'correl' = round(resultado_cor$estimate,2),
+                                               'p_value' = round(resultado_cor$p.value,2),
+                                               'n'=n) ) }
+  colnames(serieFinal) <- c('Periodo','correl','p_value','n')
+  print(serieFinal)
+  
+  serieFinal$PeriodoNum <- as.numeric(sub("-.*", "", serieFinal$Periodo))
+  set_blanket()
+  f <- ggplot(data = serieFinal) +
+    geom_step(aes(x = PeriodoNum, y = correl)) +
+    geom_point(aes(x = PeriodoNum, y = (n/400) ), size = 3) +
+    scale_y_continuous(name = "Correl", sec.axis = sec_axis( trans=~.*400 , name="n") ) +
+    labs(x = paste0('Año de inicio del período de ',n_anios,' años'),
+         title = paste0('Correlación (',tipocor,') móvil ',obtenerNombreBreve(estacion1),' - ',obtenerNombreBreve(estacion2)),
+         subtitle = paste0('Anomalías de la ',variable, ' respecto al período 1991-2020.') )
+  return(f)
+}
+
+#Reanalisis
+minimas_reanalisis <- function(){
+  
+  datos <- read.table(here('EstudioAnomalias/Resultados/TminArgV2.txt'),header = T)
+  colnames(datos) <- c("Año","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+  
+  mytabl <- datos|> gt() |>
+    tab_header(title = md('**Anomalía temperatura mínima media (°C), 1971-2025.**')) |>
+    fmt_number(columns = 2:13,decimals = 1) |>
+    data_color(columns = 2:13,method = 'numeric',palette = c("#3333ff","#ffffff","#cc0000"),domain = c(-5,5)) |>
+    tab_style(style = list(cell_text(weight = 'bold')),locations = cells_column_labels()) |>
+    tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1))
+  
+  return(mytabl)
+  #gtsave(mytabl,filename = 'tabla_minimas.html')
+  
+}
+
+maximas_reanalisis <- function(){
+  
+  datos <- read.table(here('EstudioAnomalias/Resultados/TmaxArgV2.txt'),header = T)
+  colnames(datos) <- c("Año","Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+  
+  mytabl <- datos|> gt() |>
+    tab_header(title = md('**Anomalía temperatura máxima media (°C), 1971-2025.**')) |>
+    fmt_number(columns = 2:13,decimals = 1) |>
+    data_color(columns = 2:13,method = 'numeric',palette = c("#3333ff","#ffffff","#cc0000"),domain = c(-5,5)) |>
+    tab_style(style = list(cell_text(weight = 'bold')),locations = cells_column_labels()) |>
+    tab_style(style = list(cell_text(weight = 'bold')),locations = cells_body(columns = 1))
+  
+  return(mytabl)
+  #gtsave(mytabl,filename = 'tabla_maximas.html')
+  
+}
+
+
+#-------------------------------------------------------------------------------
+####-----------------------------------------------------FIN FUNCIONES DE LA APP
+
