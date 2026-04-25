@@ -19,6 +19,7 @@ button:hover {
     background-color: orange;
 }
 
+/* otros */
 .contenedor {
   max-width: 1000px;
   margin: 0 auto; /* centra pagina en la pantalla */
