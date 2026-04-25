@@ -16,90 +16,6 @@ function limpiarNombreArchivo(nombre) {
         .toUpperCase();                      // Todo a mayúsculas
 }
 
-/*
-// Cambiar a marcha diaria
-function selec_marcha_diaria() {
-    const principal = document.getElementById('principal');
-    
-    principal.innerHTML = `
-        <h2>Marcha Diaria</h2>
-        <div style="display: flex; flex-direction: column; gap: 10px; max-width: 300px;">
-            <label>Estación: <select id="selector_md"></select></label>
-            <label>Mes: <input type="number" id="mes_marcha_diaria" value="1" min="1" max="12"></label>
-            <label>Año: <input type="number" id="anio_marcha_diaria" value="2025" min="1961" max="2026"></label>
-            <button onclick="verTabla()">Ver Tabla</button>
-        </div>
-        <hr>
-        <div id="zona-visualizacion_md"></div>
-    `;
-
-    const select = document.getElementById('selector_md');
-    lista_estaciones.forEach(nombre => {
-        let opt = document.createElement('option');
-        opt.value = nombre;
-        opt.textContent = nombre;
-        select.appendChild(opt);
-    });
-}
-
-async function verTabla() {
-    // 1. Capturamos los valores seleccionados por el usuario
-    const estacion = document.getElementById('selector_md').value;
-    const mes = document.getElementById('mes_marcha_diaria').value;
-    const anio = document.getElementById('anio_marcha_diaria').value;
-    const zona = document.getElementById('zona-visualizacion_md');
-
-    try {
-
-        const nombreArchivo = limpiarNombreArchivo(estacion) + ".db";
-        const response = await fetch(`db_estaciones/${nombreArchivo}`);
-        
-        if (!response.ok) throw new Error("No se encontró el archivo de la estación.");
-
-        const ab = await response.arrayBuffer();
-
-        const config = { locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}` };
-        const SQL = await initSqlJs(config);
-        const db_estacion = new SQL.Database(new Uint8Array(ab));
-
-        // Consulta
-        const query = `
-            SELECT * FROM weather 
-            WHERE M = ${mes} 
-            AND A = ${anio}
-            ORDER BY D ASC`;
-
-        const resultado = db_estacion.exec(query);
-
-        if (resultado.length > 0) {
-            const columnas = resultado[0].columns;
-            const filas = resultado[0].values;
-
-            let tablaHTML = `
-                <table style="width:100%; border-collapse: collapse; margin-top: 10px;" border="1">
-                    <thead style="background: #f4f4f4;">
-                        <tr>${columnas.map(col => `<th>${col}</th>`).join('')}</tr>
-                    </thead>
-                    <tbody>
-                        ${filas.map(fila => `
-                            <tr>${fila.map(celda => `<td>${celda !== null ? celda : '-'}</td>`).join('')}</tr>
-                        `).join('')}
-                    </tbody>
-                </table>`;
-
-                 zona.innerHTML = tablaHTML;
-        } else {
-            zona.innerHTML = "<p>No hay resultados para esta consulta.</p>";
-        }
-
-    } catch (err) {
-        console.error(err);
-        zona.innerHTML = `<p style="color:red;">Error: ${err.message}</p>`;
-    }
-
-}
-*/
-
 // FUNCIONES GENÉRICAS
 
 function genera_interfaz(titulo, controles, funcionCallback) {
@@ -152,8 +68,27 @@ function genera_interfaz(titulo, controles, funcionCallback) {
     zonaV.id = "zona-visualizacion";
     principal.appendChild(zonaV);
 }
+/*
+${fila.map(celda => {
+    if (celda === null) return '<td>-</td>';
+    
+    let contenido = celda.toString();
+    const tieneSalto = contenido.includes('|');
+    
+    if (tieneSalto) {
+        contenido = contenido.split('|').join('<br>');
+    }
 
-async function ejecuta_y_muestra(estacion, query) {
+    // Aplicamos vertical-align solo si detectamos que habrá varias líneas
+    const estiloDinamico = tieneSalto 
+        ? 'padding: 8px; vertical-align: top; line-height: 1.2;' 
+        : 'padding: 4px 8px; vertical-align: middle;';
+
+    return `<td style="${estiloDinamico}">${contenido}</td>`;
+}).join('')}
+*/
+
+async function ejecuta_y_muestra(estacion, query, params = []) {
     const zona = document.getElementById('zona-visualizacion');
     zona.innerHTML = "<p>Cargando datos...</p>";
 
@@ -167,14 +102,20 @@ async function ejecuta_y_muestra(estacion, query) {
         const SQL = await initSqlJs(config);
         const db_estacion = new SQL.Database(new Uint8Array(ab));
 
-        const resultado = db_estacion.exec(query);
+        const stmt = db_estacion.prepare(query);
+        stmt.bind(params);
+        const filas = [];
+        let columnas = [];
+        let columnasCapturadas = false;
+        while (stmt.step()) {
+            if (!columnasCapturadas) {
+        columnas = stmt.getColumnNames();
+        columnasCapturadas = true; }
+        filas.push(stmt.get());
+        }
 
-        if (resultado.length > 0) {
-    const columnas = resultado[0].columns;
-    const filas = resultado[0].values; // Esto es un array de arrays [[...], [...]]
-
-    zona.innerHTML = `
-        <table style="width:100%; border-collapse: collapse;" border="1">
+        if (filas.length > 0) {
+            zona.innerHTML = `<table style="width:100%; border-collapse: collapse;" border="1">
             <thead style="background: #f4f4f4;">
                 <tr>${columnas.map(col => `<th>${col}</th>`).join('')}</tr>
             </thead>
@@ -186,7 +127,6 @@ async function ejecuta_y_muestra(estacion, query) {
                             
                             let contenido = celda.toString();
                             
-                            // Si detecta el separador, aplica el salto de línea
                             if (contenido.includes('|')) {
                                 contenido = contenido.split('|').join('<br>');
                             }
@@ -200,11 +140,13 @@ async function ejecuta_y_muestra(estacion, query) {
     } else {
             zona.innerHTML = "<p>No hay resultados para esta consulta.</p>";
         }
+        stmt.free();
         db_estacion.close();
     } catch (err) {
         zona.innerHTML = `<p style="color:red;">Error: ${err.message}</p>`;
     }
 }   
+
 
 // FUNCIONES PARTICULARES
 // MARCHA DIARIA
@@ -221,9 +163,9 @@ function verTablaDiaria() {
     const mes = document.getElementById('mes_marcha_diaria').value;
     const anio = document.getElementById('anio_marcha_diaria').value;
 
-    const sql = `SELECT * FROM weather WHERE M = ${mes} AND A = ${anio} ORDER BY D ASC`;
+    const sql = `SELECT * FROM weather WHERE M = ? AND A = ? ORDER BY D ASC`;
     
-    ejecuta_y_muestra(estacion, sql);
+    ejecuta_y_muestra(estacion, sql, [mes, anio]);
 }
 
 // RECORDS
@@ -236,36 +178,38 @@ function selec_records() {
 
 function verRecords() {
     const estacion = document.getElementById('selector_records').value;
-    const anio = document.getElementById('anio_records').value;
+    const anio = document.getElementById('anio_records').value || 1873;
 
-    const sql = `WITH Extremos AS (
-    SELECT  M, MIN(Tmin) as Tnn, MIN(Tmax) as Txn, MAX(Tmin) as Tnx, MAX(Tmax) as Txx
+    const sql = `
+    WITH Extremos AS (
+        SELECT  M,
+        MIN(Tmin) as Tnn, 
+        MIN(Tmax) as Txn, 
+        MAX(Tmin) as Tnx, 
+        MAX(Tmax) as Txx
     FROM weather
-    WHERE A >= ${anio} -- Aquí va tu variable de año
+    WHERE A >= ?
     GROUP BY M
     )
     
-    SELECT E.M, 
-    E.Tnn, 
-    (SELECT GROUP_CONCAT(A || '-' || printf('%02d', M) || '-' || printf('%02d', D), '|') 
-     FROM weather WHERE M = E.M AND Tmin = E.Tnn AND A >= ${anio}) as Fecha_Tnn,
+    SELECT 
+        E.M, 
+        E.Tnn, 
+        (SELECT GROUP_CONCAT(A || '-' || printf('%02d', M) || '-' || printf('%02d', D), '|') 
+        FROM weather WHERE M = E.M AND Tmin = E.Tnn AND A >= ?) as Fecha_Tnn,
+        E.Txn,
+        (SELECT GROUP_CONCAT(A || '-' || printf('%02d', M) || '-' || printf('%02d', D), '|')
+        FROM weather WHERE M = E.M AND Tmax = E.Txn AND A >= ?) as Fecha_Txn,        
+        E.Tnx,
+        (SELECT GROUP_CONCAT(A || '-' || printf('%02d', M) || '-' || printf('%02d', D), '|')
+        FROM weather WHERE M = E.M AND Tmin = E.Tnx AND A >= ?) as Fecha_Tnx,       
+        E.Txx,
+        (SELECT GROUP_CONCAT(A || '-' || printf('%02d', M) || '-' || printf('%02d', D), '|')
+        FROM weather WHERE M = E.M AND Tmax = E.Txx AND A >= ?) as Fecha_Txx    
+        FROM Extremos E 
+        ORDER BY E.M`;
     
-    E.Txn,
-    (SELECT GROUP_CONCAT(A || '-' || printf('%02d', M) || '-' || printf('%02d', D), '|')
-     FROM weather WHERE M = E.M AND Tmax = E.Txn AND A >= ${anio}) as Fecha_Txn,
-    
-    E.Tnx,
-    (SELECT GROUP_CONCAT(A || '-' || printf('%02d', M) || '-' || printf('%02d', D), '|')
-     FROM weather WHERE M = E.M AND Tmin = E.Tnx AND A >= ${anio}) as Fecha_Tnx,
-    
-    E.Txx,
-    (SELECT GROUP_CONCAT(A || '-' || printf('%02d', M) || '-' || printf('%02d', D), '|')
-     FROM weather WHERE M = E.M AND Tmax = E.Txx AND A >= ${anio}) as Fecha_Txx
-     
-     FROM Extremos E 
-     ORDER BY E.M`;
-    
-    ejecuta_y_muestra(estacion, sql);
+    ejecuta_y_muestra(estacion, sql, [anio, anio, anio, anio, anio]);
 }
 
 
