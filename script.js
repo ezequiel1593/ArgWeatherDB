@@ -21,14 +21,14 @@ function limpiarNombreArchivo(nombre) {
 function genera_interfaz(titulo, controles, funcionCallback) {
     const principal = document.getElementById('principal');
     
-    // 1. Limpiamos y ponemos el título
+    // Limpiamos y ponemos el título
     principal.innerHTML = `<h2>${titulo}</h2>`;
     
-    // 2. Creamos el contenedor de controles
+    // Creamos el contenedor de controles
     const contenedor = document.createElement('div');
-    contenedor.style = "display: flex; flex-direction: column; gap: 10px; max-width: 300px;";
+    contenedor.className = "panel-controles";
 
-    // 3. Generamos cada control pedido
+    // Generamos cada control pedido
     controles.forEach(c => {
         const label = document.createElement('label');
         label.textContent = `${c.label}: `;
@@ -43,6 +43,16 @@ function genera_interfaz(titulo, controles, funcionCallback) {
                 opt.textContent = est;
                 el.appendChild(opt);
             });
+        } else if (c.tipo === 'select') {
+            el = document.createElement('select');
+            el.id = c.id;
+            c.opciones.forEach(op => {
+                let opt = document.createElement('option');
+                opt.value = op.value;
+                opt.textContent = op.text;
+                if (c.default && op.value === c.default) {opt.selected = true;}
+                el.appendChild(opt);
+            });
         } else {
             el = document.createElement('input');
             el.type = c.tipo;
@@ -54,13 +64,13 @@ function genera_interfaz(titulo, controles, funcionCallback) {
         contenedor.appendChild(label);
     });
 
-    // 4. Botón de acción
+    // Botón de acción
     const btn = document.createElement('button');
-    btn.textContent = "Ver Tabla";
+    btn.textContent = "OK";
     btn.onclick = funcionCallback;
     contenedor.appendChild(btn);
 
-    // 5. Agregamos todo al DOM
+    // Agregar todo al DOM
     principal.appendChild(contenedor);
     principal.appendChild(document.createElement('hr'));
     
@@ -153,8 +163,10 @@ async function ejecuta_y_muestra(estacion, query, params = []) {
 function selec_marcha_diaria() {
     genera_interfaz("Marcha Diaria", [
         { label: "Estación", id: "selector_md", tipo: "select-estaciones" },
-        { label: "Mes", id: "mes_marcha_diaria", tipo: "number", extra: { value: 1, min: 1, max: 12 } },
-        { label: "Año", id: "anio_marcha_diaria", tipo: "number", extra: { value: 2025, min: 1961, max: 2026 } }
+        { label: "Mes", id: "mes_marcha_diaria", tipo: "select", opciones: nombre_meses.map((mes, index) => ({value: index + 1, text: mes})) },
+        { label: "Año", id: "anio_marcha_diaria", tipo: "select",
+            opciones: Array.from({ length: 2026 - 1873 + 1 }, (_, i) => { const anio = 1873 + i; return { value: anio, text: anio };}).reverse(),
+            default: 2026 },
     ], verTablaDiaria); 
 }
 
@@ -172,7 +184,9 @@ function verTablaDiaria() {
 function selec_records() {
     genera_interfaz("Records", [
         { label: "Estación", id: "selector_records", tipo: "select-estaciones" },
-        { label: "Año Inicio", id: "anio_records", tipo: "number", extra: { value: 1961, min: 1873, max: 2001 } }
+        { label: "Año Inicio", id: "anio_records", tipo: "select",
+            opciones: Array.from({ length: 2001 - 1873 + 1 }, (_, i) => { const anio = 1873 + i; return { value: anio, text: anio };}).reverse(),
+            default: 1961 },
     ], verRecords); 
 }
 

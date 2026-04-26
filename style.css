@@ -1,48 +1,122 @@
+html {
+    margin: 0;
+    height: 100%;
+}
+
 body {
     font-family: Arial, sans-serif;
-    background-color: #f4f4f4;
+    background-color: #7b9669; /* 450283 */ 
     text-align: center;
-    /* padding: 50px; */
+    margin: 0;
+    height: 100%;
 }
 
 /* BOTONES */
-button {
+.boton_lat {
+    display: block;
+    width: auto;
+    margin-bottom: 15px;
+    padding: 8px 12px;
+    text-align: left;
     background-color: #007bff;
     color: white;
     border: none;
-    padding: 10px 20px; /* arriba y abajo | izquierda y derecha */
-    border-radius: 5px;
+    border-radius: 4px;
     cursor: pointer;
+    font-size: 14px;
 }
 
-button:hover {
+.boton_lat:hover {
     background-color: orange;
 }
 
 /* otros */
 .contenedor {
-  max-width: 1000px;
-  margin: 0 auto; /* centra pagina en la pantalla */
+    max-width: 1100px;
+    margin: 0 auto;
+    background-color: white;
+    border: 1px solid #999;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
 }
 
 .encabezado {
+  background-color: #05AD98;
+  color: white;
+  padding: 1rem;
+  flex-shrink: 0;
   text-align: center;
   border-bottom: 2px solid #ccc;
 }
 
 .cuerpo {
   display: flex; /* Pone los elementos uno al lado del otro */
+  flex: 1;
+  overflow: hidden;
 }
 
 .lateral {
-  flex: 1; /* Ocupa 1 parte del espacio (el 25%) */
-  background: #ddd;
-  padding: 20px;
+  width: 180px;
+  background-color: #f2f2f2;
+  padding: 4px;
+  border-right: 1px solid black;
+  flex-shrink: 0;
 }
 
 .principal {
-  flex: 3; /* Ocupa 3 partes del espacio (el 75%) */
+  flex: 1; /* Con 3 ocupaba el 75% del espacio (y .lateral el 25% restante) */
   background: #f4f4f4;
   padding: 20px;
+  overflow-y: auto;
 }
 
+.pie-pagina {
+    background-color: #333;
+    color: white;
+    text-align: center;
+    padding: 10px;
+    flex-shrink: 0;
+    border-top: 2px solid #2989d8;
+}
+
+/* Contenedor dinámico con JS */
+.panel-controles {
+    background-color: #d8e9e9;
+    padding: 15px;
+    border-radius: 10px;
+    border: 1px solid #b0c4c4;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+
+.panel-controles label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-weight: bold;
+    color: #003366;
+    font-size: 13px;
+}
+
+.panel-controles select, .panel-controles input {
+    padding: 2px 5px;
+    border: 1px solid #888;
+    background-color: white;
+}
+
+.btn-accion {
+    padding: 2px 10px;
+    background-color: #eee;
+    border: 1px solid #888;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.btn-accion:hover {
+    background-color: #ddd;
+}
