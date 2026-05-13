@@ -1,6 +1,6 @@
 // Cargar los datos al iniciarse la página
 let db;
-let lista_estaciones = ["Aeroparque", "Anchorena REM", "Azul", "Azul Aero", "Bahía Blanca Aero", "Balcarce INTA", "Bariloche Aero", "Base Belgrano II", "Base Carlini", "Base Esperanza", "Base Marambio", "Base Orcadas", "Base San Martín", "Bella Vista INTA", "Benito Juárez Aero", "Bernardo de Irigoyen Aero", "Bolivar Aero", "Buenos Aires Observatorio Central", "Capayán IANIGLA", "Castelar INTA", "Catamarca Aero", "Catamarca Aero I", "Ceres Aero", "Cerro Azul INTA", "Chacras de Coria", "Chamical Aero", "Chapelco Aero", "Chepes", "Chilecito Aero", "Cipolletti", "Cipolletti I", "Comodoro Rivadavia Aero", "Concordia Aero", "Córdoba Aero", "Córdoba Observatorio", "Coronel Pringles Aero", "Coronel Suarez Aero", "Corrientes Aero", "Curuzú Cuatiá", "Desaguadero REM", "Dolores Aero", "Don Torcuato Aero", "El Bolsón Aero", "El Bolsón I", "El Calafate Aero", "El Palomar Aero", "El Trébol Aero", "Esquel Aero", "Ezeiza Aero", "Famaillá INTA", "Formosa Aero", "General Acha", "General Pico Aero", "General Pizarro EEAOC", "Gobernador Gregores Aero", "Gualeguaychú Aero", "Hilario Ascasubi INTA", "Iguazú Aero", "Ituzaingó", "Jáchal", "Jujuy Aero", "Jujuy UN", "Junin Aero", "La Consulta INTA", "La Plata Aero", "La Quiaca Observatorio", "La Rioja Aero", "La Tranca REM", "Laboulaye Aero", "Lago Argentino Aero", "Laprida", "Las Breñas INTA", "Las Flores", "Las Lomitas", "Malargüe", "Malargüe Aero", "Maquinchao", "Mar del Plata Aero", "Marcos Juárez Aero", "Mendoza Aero", "Mendoza Observatorio", "Mercedes Aero", "Mercedes INTA", "Metán", "Misión La Paz", "Monte Caseros Aero", "Morón Aero", "Neuquén Aero", "Nueve de Julio", "Oberá", "Olavarría Aero", "Orán Aero", "Paraná Aero", "Paso de Indios", "Paso de los Libres Aero", "Pcia Roque Saenz Peña Aero", "Pehuajó Aero", "Pergamino INTA", "Perito Moreno Aero", "Pigüé Aero", "Pilar Observatorio", "Posadas Aero", "Puerto Deseado Aero", "Puerto Madryn Aero", "Punta Indio B.A.", "Reconquista Aero", "Resistencia Aero", "Rincón de los Sauces SINARAME", "Rio Colorado", "Rio Cuarto Aero", "Rio Gallegos Aero", "Rio Grande B.A.", "Rivadavia", "Rosario Aero", "Salta Aero", "San Antonio Oeste Aero", "San Antonio Oeste I", "San Carlos Mza", "San Fernando Aero", "San Juan Aero", "San Juan Aero I", "San Julián Aero", "San Luis Aero", "San Martín Mza", "San Miguel", "San Pedro INTA", "San Rafael Aero", "Santa Ana EEAOC", "Santa Cruz Aero", "Santa Rosa Aero", "Santa Rosa del Conlara Aero", "Santiago del Estero Aero", "Sauce Viejo Aero", "Tandil Aero", "Tartagal Aero", "Tinogasta", "Trelew Aero", "Trenque Lauquen", "Tres Arroyos", "Tucumán Aero", "Tucumán Aero I", "Unión REM", "Ushuaia Aero", "Ushuaia Aero I", "Uspallata Aero", "Valle de Pancanta REM", "Venado Tuerto Aero", "Victorica", "Viedma Aero", "Villa de María del Río Seco", "Villa Dolores Aero", "Villa Gesell Aero", "Villa Reynolds Aero", "Villaguay Aero"];
+let lista_estaciones = ["La Quiaca Observatorio"]
 let nombre_meses = [
     "Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio",
     "Agosto","Septiembre","Octubre","Noviembre","Diciembre"
@@ -17,14 +17,13 @@ function limpiarNombreArchivo(nombre) {
 }
 
 // FUNCIONES GENÉRICAS
-
 function genera_interfaz(titulo, controles, funcionCallback) {
     const principal = document.getElementById('principal');
     
-    // Limpiamos y ponemos el título
+    // Título
     principal.innerHTML = `<h2>${titulo}</h2>`;
     
-    // Creamos el contenedor de controles
+    // Contenedor de controles
     const contenedor = document.createElement('div');
     contenedor.className = "panel-controles";
 
@@ -78,34 +77,32 @@ function genera_interfaz(titulo, controles, funcionCallback) {
     zonaV.id = "zona-visualizacion";
     principal.appendChild(zonaV);
 }
-/*
-${fila.map(celda => {
-    if (celda === null) return '<td>-</td>';
-    
-    let contenido = celda.toString();
-    const tieneSalto = contenido.includes('|');
-    
-    if (tieneSalto) {
-        contenido = contenido.split('|').join('<br>');
-    }
-
-    // Aplicamos vertical-align solo si detectamos que habrá varias líneas
-    const estiloDinamico = tieneSalto 
-        ? 'padding: 8px; vertical-align: top; line-height: 1.2;' 
-        : 'padding: 4px 8px; vertical-align: middle;';
-
-    return `<td style="${estiloDinamico}">${contenido}</td>`;
-}).join('')}
-*/
 
 async function ejecuta_y_muestra(estacion, query, params = []) {
     const zona = document.getElementById('zona-visualizacion');
     zona.innerHTML = "<p>Cargando datos...</p>";
 
+    // Diccionario para renombrar encabezados
+    const nombresHeaders = {
+        "wmo_id": "ESTACION",
+        "Fecha_local": "Fecha y hora local",
+        "Estado_del_tiempo": "Estado del tiempo",
+        "Visibilidad": "Visibilidad [m]",
+        "Temp_aire": "Temperatura [°C]",
+        "Pto_rocio": "Punto de rocío [°C]",
+        "Hum_rel": "Humedad relativa [%]",
+        "Viento": "Viento [km/h]",
+        "Pres_est": "Presión [hPa]",
+        "Temp_max": "Tmax [°C]",
+        "Hora_Tmax": "Hora",
+        "Temp_min": "Tmin [°C]",
+        "Hora_Tmin": "Hora"
+    };
+
     try {
         const nombreArchivo = limpiarNombreArchivo(estacion) + ".db";
         const response = await fetch(`db_estaciones/${nombreArchivo}`);
-        if (!response.ok) throw new Error("No se encontró la base de datos.");
+        if (!response.ok) throw new Error("Base de datos no encontrada");
 
         const ab = await response.arrayBuffer();
         const config = { locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}` };
@@ -114,72 +111,106 @@ async function ejecuta_y_muestra(estacion, query, params = []) {
 
         const stmt = db_estacion.prepare(query);
         stmt.bind(params);
+        
         const filas = [];
         let columnas = [];
-        let columnasCapturadas = false;
         while (stmt.step()) {
-            if (!columnasCapturadas) {
-        columnas = stmt.getColumnNames();
-        columnasCapturadas = true; }
-        filas.push(stmt.get());
+            if (columnas.length === 0) columnas = stmt.getColumnNames();
+            filas.push(stmt.get());
         }
 
         if (filas.length > 0) {
-            zona.innerHTML = `<table style="width:100%; border-collapse: collapse;" border="1">
-            <thead style="background: #f4f4f4;">
-                <tr>${columnas.map(col => `<th>${col}</th>`).join('')}</tr>
-            </thead>
-            <tbody>
-                ${filas.map(fila => `
-                    <tr>
-                        ${fila.map(celda => {
-                            if (celda === null) return '<td>-</td>';
-                            
-                            let contenido = celda.toString();
-                            
-                            if (contenido.includes('|')) {
-                                contenido = contenido.split('|').join('<br>');
-                            }
-                            
-                            return `<td style="padding: 8px; vertical-align: top;">${contenido}</td>`;
-                        }).join('')}
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>`;
-    } else {
-            zona.innerHTML = "<p>No hay resultados para esta consulta.</p>";
+
+            const columnasOcultas = ["wmo_id"];
+            const columnasVisibles = columnas.filter(col => !columnasOcultas.includes(col));
+
+            let tablaHTML = `
+            <style>
+                .tabla-clima { 
+                    width: 100%; border-collapse: collapse; 
+                    border: 1px solid black !important; font-family: Arial, sans-serif;
+                }
+                .tabla-clima th { 
+                    background-color: #8dbedb !important; border: 1px solid black !important; 
+                    padding: 8px; text-align: center; font-weight: bold; font-size: 12px;
+                }
+                .tabla-clima td { 
+                    border: 1px solid black !important; padding: 6px; 
+                    text-align: center; font-size: 13px; color: black;
+                }
+                /* Segunda columna (Fecha y Hora) con fondo celeste como en la imagen */
+                .tabla-clima td:nth-child(1) { 
+                    background-color: #8dbedb !important; font-weight: bold;
+                }
+            </style>
+            <table class="tabla-clima"><thead><tr>`;
+            
+            // Generar encabezados renombrados
+            columnasVisibles.forEach(col => {
+                const nombreVisible = nombresHeaders[col] || col.replace(/_/g, ' ');
+                tablaHTML += `<th>${nombreVisible}</th>`;
+            });
+
+            tablaHTML += `</tr></thead><tbody>`;
+
+            // Generar filas
+            filas.forEach(fila => {
+                tablaHTML += `<tr>`;
+                columnas.forEach((col, idx) => {
+                    if (columnasOcultas.includes(col)) return;
+
+                        let celda = fila[idx];
+                        let contenido = (celda === null || celda === undefined) ? "-" : celda;
+
+                        if (col === "Fecha_local" && contenido !== "-") {
+                            let partes = contenido.toString().split(' ');
+                            let fecha = partes[0];
+                            let horaFull = partes[1] || "00:00:00"; 
+                            let horaFormateada = horaFull.substring(0, 2) + " h";
+                            contenido = `${fecha}<br>${horaFormateada}`;
+                        }
+            tablaHTML += `<td>${contenido}</td>`;
+        });
+        tablaHTML += `</tr>`;
+    });
+
+            tablaHTML += `</tbody></table>`;
+            zona.innerHTML = tablaHTML;
+        } else {
+            zona.innerHTML = "<p>No hay datos registrados para este período.</p>";
         }
+        
         stmt.free();
         db_estacion.close();
     } catch (err) {
         zona.innerHTML = `<p style="color:red;">Error: ${err.message}</p>`;
     }
-}   
-
+}
 
 // FUNCIONES PARTICULARES
-// MARCHA DIARIA
+// MARCHA HORARIA
 function selec_marcha_diaria() {
-    genera_interfaz("Marcha Diaria", [
+    genera_interfaz("Marcha Horaria", [
         { label: "Estación", id: "selector_md", tipo: "select-estaciones" },
         { label: "Mes", id: "mes_marcha_diaria", tipo: "select", opciones: nombre_meses.map((mes, index) => ({value: index + 1, text: mes})) },
         { label: "Año", id: "anio_marcha_diaria", tipo: "select",
-            opciones: Array.from({ length: 2026 - 1873 + 1 }, (_, i) => { const anio = 1873 + i; return { value: anio, text: anio };}).reverse(),
-            default: 2026 },
+            opciones: Array.from({ length: 2025 - 1999 + 1 }, (_, i) => { const anio = 1999 + i; return { value: anio, text: anio };}).reverse(),
+            default: 2025 },
     ], verTablaDiaria); 
 }
 
 function verTablaDiaria() {
     const estacion = document.getElementById('selector_md').value;
-    const mes = document.getElementById('mes_marcha_diaria').value;
+    const mes = document.getElementById('mes_marcha_diaria').value.padStart(2, '0');
     const anio = document.getElementById('anio_marcha_diaria').value;
 
-    const sql = `SELECT * FROM weather WHERE M = ? AND A = ? ORDER BY D ASC`;
+    const filtroFecha = `${anio}-${mes}%`; 
+    const sql = `SELECT * FROM reportes WHERE Fecha_local LIKE ? ORDER BY Fecha_local ASC`;
     
-    ejecuta_y_muestra(estacion, sql, [mes, anio]);
+    ejecuta_y_muestra(estacion, sql, [filtroFecha]);
 }
 
+/*
 // RECORDS
 function selec_records() {
     genera_interfaz("Records", [
@@ -225,5 +256,5 @@ function verRecords() {
     
     ejecuta_y_muestra(estacion, sql, [anio, anio, anio, anio, anio]);
 }
-
+*/
 
