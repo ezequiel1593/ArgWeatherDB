@@ -1,6 +1,20 @@
 // Cargar los datos al iniciarse la página
 let db;
-let lista_estaciones = ["La Quiaca Observatorio"]
+let lista_estaciones = [
+    "Aeroparque","Azul Aero","Bahía Blanca Aero","Bariloche Aero","Benito Juárez Aero","Bernardo de Irigoyen Aero","Bolívar Aero",
+    "Catamarca Aero","Ceres Aero","Chamical Aero","Chapelco Aero","Comodoro Rivadavia Aero",
+    "Concordia Aero","Córdoba Aero","Córdoba Observatorio","Coronel Suárez Aero","Corrientes Aero","Dolores Aero",
+    "El Calafate Aero","El Bolsón Aero","Esquel Aero","Formosa Aero","General Pico Aero",
+    "Gualeguaychú Aero","Iguazú Aero","Jujuy Aero","Junín Aero",
+    "Laboulaye Aero","La Quiaca Observatorio","La Plata Aero","La Rioja Aero","Las Flores","Las Lomitas",
+    "Malargüe Aero","Maquinchao","Marcos Juárez Aero","Mar del Plata Aero","Mendoza Aero","Monte Caseros Aero","Neuquén Aero",
+    "Orán Aero","Paraná Aero","Paso de los Libres Aero","Pcia Roque Saenz Peña Aero","Perito Moreno Aero",
+    "Pilar Observatorio","Posadas Aero","Puerto Deseado Aero",
+    "Reconquista Aero","Resistencia Aero","Rio Cuarto Aero","Rio Gallegos Aero","Rio Grande B.A.","Rosario Aero",
+    "Salta Aero","San Antonio Oeste","San Juan Aero","San Julián Aero","San Luis Aero","San Martín Mza","San Rafael Aero",
+    "Santa Rosa Aero","Santiago del Estero Aero","Sauce Viejo Aero","Tandil Aero",
+    "Tartagal Aero","Trelew Aero","Tres Arroyos","Tucumán Aero","Ushuaia Aero",
+    "Viedma Aero","Villa de María del Rio Seco","Villa Dolores","Villa Reynolds"]
 let nombre_meses = [
     "Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio",
     "Agosto","Septiembre","Octubre","Noviembre","Diciembre"
@@ -93,10 +107,16 @@ async function ejecuta_y_muestra(estacion, query, params = []) {
         "Hum_rel": "Humedad relativa [%]",
         "Viento": "Viento [km/h]",
         "Pres_est": "Presión [hPa]",
+        "PNMM_AG": "Presión al nivel del mar [hPa] o Altura geopotencial [mgp]",
         "Temp_max": "Tmax [°C]",
         "Hora_Tmax": "Hora",
         "Temp_min": "Tmin [°C]",
-        "Hora_Tmin": "Hora"
+        "Hora_Tmin": "Hora",
+        "Tmin_5cm_suelo": "Tmin 5 cm suelo [°C]",
+        "Prof_nieve": "Prof. nieve [cm]",
+        "Evaporacion": "Evap. [mm]",
+        "Heliofania": "Heliofania [horas]",
+        "Prec_semanal": "Prec. semanal [mm]"
     };
 
     try {
@@ -132,13 +152,13 @@ async function ejecuta_y_muestra(estacion, query, params = []) {
                 }
                 .tabla-clima th { 
                     background-color: #8dbedb !important; border: 1px solid black !important; 
-                    padding: 8px; text-align: center; font-weight: bold; font-size: 12px;
+                    padding: 4px; text-align: center; font-weight: bold; font-size: 12px;
                 }
                 .tabla-clima td { 
-                    border: 1px solid black !important; padding: 6px; 
+                    border: 1px solid black !important; padding: 1px; 
                     text-align: center; font-size: 13px; color: black;
                 }
-                /* Segunda columna (Fecha y Hora) con fondo celeste como en la imagen */
+                /* Columna Fecha y Hora */
                 .tabla-clima td:nth-child(1) { 
                     background-color: #8dbedb !important; font-weight: bold;
                 }
@@ -194,8 +214,8 @@ function selec_marcha_diaria() {
         { label: "Estación", id: "selector_md", tipo: "select-estaciones" },
         { label: "Mes", id: "mes_marcha_diaria", tipo: "select", opciones: nombre_meses.map((mes, index) => ({value: index + 1, text: mes})) },
         { label: "Año", id: "anio_marcha_diaria", tipo: "select",
-            opciones: Array.from({ length: 2025 - 1999 + 1 }, (_, i) => { const anio = 1999 + i; return { value: anio, text: anio };}).reverse(),
-            default: 2025 },
+            opciones: Array.from({ length: 2026 - 1999 + 1 }, (_, i) => { const anio = 1999 + i; return { value: anio, text: anio };}).reverse(),
+            default: 2026 },
     ], verTablaDiaria); 
 }
 
