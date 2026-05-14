@@ -66,6 +66,11 @@ function genera_interfaz(titulo, controles, funcionCallback) {
                 if (c.default && op.value === c.default) {opt.selected = true;}
                 el.appendChild(opt);
             });
+        } else if (c.tipo === 'checkbox') {
+            el = document.createElement('input');
+            el.type = 'checkbox';
+            el.id = c.id;
+            if (c.default) el.checked = true;
         } else {
             el = document.createElement('input');
             el.type = c.tipo;
@@ -109,9 +114,9 @@ async function ejecuta_y_muestra(estacion, query, params = []) {
         "Pres_est": "Presión [hPa]",
         "PNMM_AG": "Presión al nivel del mar [hPa] o Altura geopotencial [mgp]",
         "Temp_max": "Tmax [°C]",
-        "Hora_Tmax": "Hora",
+        "Tmax_hora": "Hora",
         "Temp_min": "Tmin [°C]",
-        "Hora_Tmin": "Hora",
+        "Tmin_hora": "Hora",
         "Tmin_5cm_suelo": "Tmin 5 cm suelo [°C]",
         "Prof_nieve": "Prof. nieve [cm]",
         "Evaporacion": "Evap. [mm]",
@@ -216,6 +221,7 @@ function selec_marcha_diaria() {
         { label: "Año", id: "anio_marcha_diaria", tipo: "select",
             opciones: Array.from({ length: 2026 - 1999 + 1 }, (_, i) => { const anio = 1999 + i; return { value: anio, text: anio };}).reverse(),
             default: 2026 },
+        { label: "Solo horas principales", id: "check_principales", tipo: "checkbox", default: true }
     ], verTablaDiaria); 
 }
 
@@ -223,9 +229,21 @@ function verTablaDiaria() {
     const estacion = document.getElementById('selector_md').value;
     const mes = document.getElementById('mes_marcha_diaria').value.padStart(2, '0');
     const anio = document.getElementById('anio_marcha_diaria').value;
+    const soloPrincipales = document.getElementById('check_principales').checked;
 
     const filtroFecha = `${anio}-${mes}%`; 
-    const sql = `SELECT * FROM reportes WHERE Fecha_local LIKE ? ORDER BY Fecha_local ASC`;
+    let sql = `SELECT * FROM reportes WHERE Fecha_local LIKE ?`;
+
+    if (soloPrincipales) {
+        sql += ` AND (
+            Fecha_local LIKE '% 03:%' OR 
+            Fecha_local LIKE '% 09:%' OR 
+            Fecha_local LIKE '% 15:%' OR 
+            Fecha_local LIKE '% 21:%'
+        )`;
+    }
+
+    sql += ` ORDER BY Fecha_local ASC`;
     
     ejecuta_y_muestra(estacion, sql, [filtroFecha]);
 }
